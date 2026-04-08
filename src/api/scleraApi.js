@@ -1,0 +1,336 @@
+import axios from 'axios'
+
+const API_BASE_URL = import.meta.env.VITE_SCLERA_API_BASE_URL || 'http://ec2-65-2-96-103.ap-south-1.compute.amazonaws.com:7600'
+export const INTERNAL_SYSTEM_ZONE = ['sclera', 'internal'].join('.')
+
+const client = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+function parseErrorMessage(error) {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data
+
+    if (typeof data === 'string' && data.trim()) {
+      return data.trim()
+    }
+
+    if (typeof data?.message === 'string' && data.message.trim()) {
+      return data.message.trim()
+    }
+
+    if (typeof error.message === 'string' && error.message.trim()) {
+      return error.message.trim()
+    }
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim()
+  }
+
+  return 'Something went wrong while talking to the ScleraDNS API.'
+}
+
+async function request(config) {
+  try {
+    const response = await client.request(config)
+    return response.data
+  } catch (error) {
+    const apiError = new Error(parseErrorMessage(error))
+    apiError.cause = error
+    throw apiError
+  }
+}
+
+export function trimTrailingDot(value = '') {
+  return typeof value === 'string' ? value.replace(/\.$/, '') : value
+}
+
+export function normalizeZoneName(value = '') {
+  return trimTrailingDot(value).trim()
+}
+
+export function getZoneDisplayName(value = '') {
+  return trimTrailingDot(value)
+}
+
+export function isInternalSystemZone(value = '') {
+  return normalizeZoneName(value).toLowerCase() === INTERNAL_SYSTEM_ZONE
+}
+
+export function normalizeRecordValue(value = '') {
+  return typeof value === 'string' ? value.trim().replace(/\.$/, '') : value
+}
+
+export function getSubdomainFromRecordName(recordName = '', zoneName = '') {
+  const cleanRecordName = trimTrailingDot(recordName)
+  const cleanZoneName = normalizeZoneName(zoneName)
+
+  if (!cleanRecordName || !cleanZoneName || cleanRecordName === cleanZoneName) {
+    return '@'
+  }
+
+  const suffix = `.${cleanZoneName}`
+  return cleanRecordName.endsWith(suffix)
+    ? cleanRecordName.slice(0, -suffix.length)
+    : cleanRecordName
+}
+
+export function normalizeSubdomain(value = '') {
+  const trimmed = value.trim()
+  return trimmed === '@' ? '' : trimmed
+}
+
+export function parseRecordValues(value = '') {
+  return value
+    .split(/[\n,]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+}
+
+export function normalizeRegexPattern(value = '') {
+  return typeof value === 'string'
+    ? value.trim().replace(/\\\\/g, '\\')
+    : value
+}
+
+export function normalizeNameserverEntries(values = []) {
+  return values
+    .map((value) => {
+      if (typeof value === 'string') {
+        return { host: normalizeZoneName(value) }
+      }
+
+      const host = normalizeZoneName(value?.host ?? value?.hostname)
+      const ips = Array.isArray(value?.ips)
+        ? value.ips.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean)
+        : Array.isArray(value?.ip)
+          ? value.ip.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean)
+          : typeof value?.ips === 'string'
+            ? [value.ips.trim()].filter(Boolean)
+            : typeof value?.ip === 'string'
+              ? [value.ip.trim()].filter(Boolean)
+              : []
+
+      return ips.length > 0 ? { host, ips } : { host }
+    })
+    .filter((value) => value.host)
+}
+
+export async function getHealth() {
+  return request({
+    method: 'GET',
+    url: '/health',
+  })
+}
+
+export async function createZone(zone, nameservers = []) {
+  return request({
+    method: 'POST',
+    url: '/createZone',
+    data: {
+      zone: normalizeZoneName(zone),
+      nameservers: normalizeNameserverEntries(nameservers),
+    },
+  })
+}
+
+export async function listZones() {
+  const data = await request({
+    method: 'GET',
+    url: '/listZones',
+  })
+
+  return Array.isArray(data) ? data : []
+}
+
+export async function listRecords() {
+  const data = await request({
+    method: 'GET',
+    url: '/listRecords',
+  })
+
+  return data && typeof data === 'object' ? data : {}
+}
+
+export async function getZone(zone) {
+  const data = await request({
+    method: 'GET',
+    url: '/getZone',
+    params: { zone: normalizeZoneName(zone) },
+  })
+
+  return Array.isArray(data) ? data : []
+}
+
+export async function getRecord({ zone, subdomain = '', record_type }) {
+  return request({
+    method: 'GET',
+    url: '/getRecord',
+    params: {
+      zone: normalizeZoneName(zone),
+      subdomain: normalizeSubdomain(subdomain),
+      record_type,
+    },
+  })
+}
+
+export async function addRecord({ zone, subdomain = '', record_type, value, ttl }) {
+  return request({
+    method: 'POST',
+    url: '/addRecord',
+    data: {
+      zone: normalizeZoneName(zone),
+      subdomain: normalizeSubdomain(subdomain),
+      record_type,
+      value: value.trim(),
+      ttl: Number(ttl),
+    },
+  })
+}
+
+export async function updateRecord({ zone, subdomain = '', record_type, values, ttl }) {
+  return request({
+    method: 'PUT',
+    url: '/updateRecord',
+    data: {
+      zone: normalizeZoneName(zone),
+      subdomain: normalizeSubdomain(subdomain),
+      record_type,
+      values,
+      ttl: Number(ttl),
+    },
+  })
+}
+
+export async function deleteRecord({ zone, subdomain = '', record_type, value }) {
+  return request({
+    method: 'POST',
+    url: '/deleteRecord',
+    data: {
+      zone: normalizeZoneName(zone),
+      subdomain: normalizeSubdomain(subdomain),
+      record_type,
+      value,
+    },
+  })
+}
+
+export async function deleteAllRecords({ zone, subdomain = '', record_type }) {
+  return request({
+    method: 'POST',
+    url: '/deleteAllRecords',
+    data: {
+      zone: normalizeZoneName(zone),
+      subdomain: normalizeSubdomain(subdomain),
+      record_type,
+    },
+  })
+}
+
+export async function deleteZone(zone) {
+  return request({
+    method: 'POST',
+    url: '/deleteZone',
+    data: { zone: normalizeZoneName(zone) },
+  })
+}
+
+export async function addSmartIPRule({
+  id = 0,
+  name,
+  description = '',
+  zones,
+  pattern,
+  ttl,
+}) {
+  return request({
+    method: 'POST',
+    url: '/addSmartIPRule',
+    data: {
+      id: Number(id) || 0,
+      name: name.trim(),
+      description: description.trim(),
+      zones: zones.map(normalizeZoneName),
+      pattern: normalizeRegexPattern(pattern),
+      ttl: Number(ttl),
+    },
+  })
+}
+
+export async function addZoneToSmartIPRule({ id, name, zone }) {
+  const data = {
+    zone: normalizeZoneName(zone),
+  }
+
+  if (id) {
+    data.id = Number(id)
+  } else if (name) {
+    data.name = name.trim()
+  }
+
+  return request({
+    method: 'POST',
+    url: '/addZoneToSmartIPRule',
+    data,
+  })
+}
+
+export async function removeZoneFromSmartIPRule({ id, name, zone }) {
+  const data = {
+    zone: normalizeZoneName(zone),
+  }
+
+  if (id) {
+    data.id = Number(id)
+  } else if (name) {
+    data.name = name.trim()
+  }
+
+  return request({
+    method: 'POST',
+    url: '/removeZoneFromSmartIPRule',
+    data,
+  })
+}
+
+export async function listSmartIPRules() {
+  const data = await request({
+    method: 'GET',
+    url: '/listSmartIPRules',
+  })
+
+  return Array.isArray(data) ? data : []
+}
+
+export async function deleteSmartIPRule({ id, name }) {
+  const data = {}
+
+  if (id) {
+    data.id = Number(id)
+  } else if (name) {
+    data.name = name.trim()
+  }
+
+  return request({
+    method: 'POST',
+    url: '/deleteSmartIPRule',
+    data,
+  })
+}
+
+export async function resolveDns({ name, type }) {
+  return request({
+    method: 'GET',
+    url: '/resolve',
+    params: {
+      name,
+      type,
+    },
+  })
+}
+
+export { API_BASE_URL, client as scleraApiClient }
