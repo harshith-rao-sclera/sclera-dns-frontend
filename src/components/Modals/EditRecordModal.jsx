@@ -12,10 +12,8 @@ const RECORD_TYPES = [
   { value: 'A', label: 'A - IPv4 address' },
   { value: 'AAAA', label: 'AAAA - IPv6 address' },
   { value: 'CNAME', label: 'CNAME - Canonical name' },
-  { value: 'MX', label: 'MX - Mail exchange' },
-  { value: 'TXT', label: 'TXT - Text record' },
-  { value: 'SRV', label: 'SRV - Service locator' },
   { value: 'NS', label: 'NS - Name server' },
+  { value: 'TXT', label: 'TXT - Text record' },
 ]
 
 const TTL_PRESETS = [
@@ -35,6 +33,29 @@ function isDomainLike(value) {
   return DOMAIN_PATTERN.test(value.trim())
 }
 
+function parseValuesByType(type, value) {
+  if (type === 'TXT') {
+    return value
+      .split(/\n+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  }
+
+  return parseRecordValues(value)
+}
+
+function countUnescapedQuotes(value) {
+  let count = 0
+
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === '"' && value[index - 1] !== '\\') {
+      count += 1
+    }
+  }
+
+  return count
+}
+
 function validateRecordValue(type, value) {
   const trimmed = value.trim()
 
@@ -47,18 +68,25 @@ function validateRecordValue(type, value) {
       return isDomainLike(trimmed) ? '' : 'CNAME records must be valid hostnames.'
     case 'NS':
       return isDomainLike(trimmed) ? '' : 'NS records must be valid nameserver hostnames.'
-    case 'MX': {
-      const match = trimmed.match(/^(\d+)\s+(.+)$/)
-      if (!match) return 'MX records must use "priority hostname", for example "10 mail.example.com".'
-      return isDomainLike(match[2]) ? '' : 'MX records must include a valid mail host after the priority.'
+    case 'TXT': {
+      if (!trimmed) {
+        return 'TXT records cannot be empty.'
+      }
+
+      if (countUnescapedQuotes(trimmed) % 2 !== 0) {
+        return 'TXT records must use balanced double quotes when quotes are included.'
+      }
+
+      const unwrapped = trimmed.startsWith('"') && trimmed.endsWith('"')
+        ? trimmed.slice(1, -1)
+        : trimmed
+
+      if (unwrapped.length > 255) {
+        return 'Each TXT entry should stay within 255 characters. Split long text into separate entries.'
+      }
+
+      return ''
     }
-    case 'SRV': {
-      const match = trimmed.match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/)
-      if (!match) return 'SRV records must use "priority weight port target".'
-      return isDomainLike(match[4]) ? '' : 'SRV records must end with a valid target hostname.'
-    }
-    case 'TXT':
-      return trimmed ? '' : 'TXT records cannot be empty.'
     default:
       return trimmed ? '' : 'Record value cannot be empty.'
   }
@@ -89,14 +117,89 @@ function getInitialForm(data) {
   }
 }
 
-function getRecordValueHelperText(type) {
+function normalizeRecordNameKey(value = '') {
+  const trimmed = value.trim()
+
+  if (!trimmed || trimmed === '@') {
+    return '@'
+  }
+
+  return trimmed.replace(/\.$/, '').toLowerCase()
+}
+
+function validateRecordPlacement({ name, type, records = [], currentRecord }) {
+  const normalizedName = normalizeRecordNameKey(name)
+
+  if (type === 'CNAME' && normalizedName === '@') {
+    return 'CNAME records cannot be created at the zone apex.'
+  }
+
+  const siblingRecords = records.filter((record) => {
+    if (currentRecord && record.id === currentRecord.id) {
+      return false
+    }
+
+    return normalizeRecordNameKey(record.name) === normalizedName
+  })
+
+  const hasCnameSibling = siblingRecords.some((record) => record.type === 'CNAME')
+  const hasNonCnameSibling = siblingRecords.some((record) => record.type !== 'CNAME')
+
+  if (type === 'CNAME' && hasNonCnameSibling) {
+    return 'A CNAME record cannot coexist with other record types on the same name.'
+  }
+
+  if (type !== 'CNAME' && hasCnameSibling) {
+    return 'This name already has a CNAME record, so other record types are not allowed here.'
+  }
+
+  return ''
+}
+
+function getRecordValueConfig(type) {
   switch (type) {
     case 'A':
-      return 'Use valid IPv4 addresses only. You can enter multiple values with commas or new lines.'
+      return {
+        label: 'IPv4 Address',
+        placeholder: 'e.g. 192.0.2.10',
+        helperText: 'Use valid IPv4 addresses only. You can enter multiple values with commas or new lines.',
+        rows: 3,
+      }
     case 'AAAA':
-      return 'Use valid IPv6 addresses only. You can enter multiple values with commas or new lines.'
+      return {
+        label: 'IPv6 Address',
+        placeholder: 'e.g. 2001:db8::10',
+        helperText: 'Use valid IPv6 addresses only. You can enter multiple values with commas or new lines.',
+        rows: 3,
+      }
+    case 'CNAME':
+      return {
+        label: 'Canonical Target',
+        placeholder: 'e.g. origin.example.net.',
+        helperText: 'Enter the hostname this record should point to. CNAME is not allowed at the apex.',
+        rows: 3,
+      }
+    case 'NS':
+      return {
+        label: 'Nameserver Hostname',
+        placeholder: 'e.g. ns1.example.net.',
+        helperText: 'Enter one nameserver hostname per line or separate multiple values with commas.',
+        rows: 3,
+      }
+    case 'TXT':
+      return {
+        label: 'TXT Value',
+        placeholder: '"v=spf1 include:mail.example.com ~all"',
+        helperText: 'Enter one TXT value per line. Commas stay inside the TXT value, and quotes must be balanced.',
+        rows: 4,
+      }
     default:
-      return 'Use commas or new lines to enter multiple values.'
+      return {
+        label: 'Record Value',
+        placeholder: 'Enter a record value',
+        helperText: 'Use commas or new lines to enter multiple values.',
+        rows: 3,
+      }
   }
 }
 
@@ -106,6 +209,7 @@ export function EditRecordModal() {
   const { showError, showSuccess } = useFeedback()
   const [form, setForm] = useState(getInitialForm(null))
   const [error, setError] = useState('')
+  const [nameError, setNameError] = useState('')
   const [valueError, setValueError] = useState('')
   const [ttlError, setTtlError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -114,6 +218,7 @@ export function EditRecordModal() {
     if (modal.isOpen) {
       setForm(getInitialForm(modal.data))
       setError('')
+      setNameError('')
       setValueError('')
       setTtlError('')
     }
@@ -122,7 +227,7 @@ export function EditRecordModal() {
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
 
   const validateCurrentValues = (type, rawValue) => {
-    const values = parseRecordValues(rawValue)
+    const values = parseValuesByType(type, rawValue)
     if (values.length === 0) return ''
     return values.map((value) => validateRecordValue(type, value)).find(Boolean) || ''
   }
@@ -140,26 +245,33 @@ export function EditRecordModal() {
         throw new Error('SOA records are managed by the system and cannot be edited here.')
       }
 
-      const values = parseRecordValues(form.value)
+      const values = parseValuesByType(form.type, form.value)
 
       if (values.length === 0) {
         throw new Error('Please provide at least one record value.')
       }
 
+      const nextNameError = validateRecordPlacement({
+        name: form.name,
+        type: form.type,
+        records: modal.data?.records || [],
+        currentRecord: modal.data?.record,
+      })
       const nextTtlError = validateTtl(form.ttl)
       const nextValueError = values.map((value) => validateRecordValue(form.type, value)).find(Boolean) || ''
 
+      setNameError(nextNameError)
       setTtlError(nextTtlError)
       setValueError(nextValueError)
 
-      if (nextTtlError || nextValueError) {
-        throw new Error(nextTtlError || nextValueError)
+      if (nextNameError || nextTtlError || nextValueError) {
+        throw new Error(nextNameError || nextTtlError || nextValueError)
       }
 
       const payload = {
         zone: modal.data?.zone,
-        subdomain: form.name,
-        record_type: form.type,
+        subdomain: isEdit ? (modal.data?.record?.name || form.name) : form.name,
+        record_type: isEdit ? (modal.data?.record?.type || form.type) : form.type,
         ttl: Number(form.ttl),
       }
 
@@ -187,6 +299,7 @@ export function EditRecordModal() {
 
   const isEdit = !!modal.data?.record
   const zone = modal.data?.zone || ''
+  const valueConfig = getRecordValueConfig(form.type)
   const title = isEdit
     ? `Edit ${modal.data.record.type} Record: ${modal.data.record.name}`
     : 'Create DNS Record'
@@ -227,6 +340,12 @@ export function EditRecordModal() {
           </Alert>
         )}
 
+        {isEdit && (
+          <Alert title="Safe edit mode">
+            Record name and type are locked while editing so this update stays attached to the same RRset.
+          </Alert>
+        )}
+
         <div>
           <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-4">
             Basic Information
@@ -236,7 +355,19 @@ export function EditRecordModal() {
               label="Record Name"
               placeholder="e.g. api, www, @"
               value={form.name}
-              onChange={(event) => set('name', event.target.value)}
+              onChange={(event) => {
+                const nextName = event.target.value
+                set('name', nextName)
+                setNameError(validateRecordPlacement({
+                  name: nextName,
+                  type: form.type,
+                  records: modal.data?.records || [],
+                  currentRecord: modal.data?.record,
+                }))
+              }}
+              disabled={isEdit}
+              error={!!nameError}
+              errorMessage={nameError}
             />
             <Select
               label="Record Type"
@@ -245,23 +376,30 @@ export function EditRecordModal() {
               onChange={(event) => {
                 const nextType = event.target.value
                 set('type', nextType)
+                setNameError(validateRecordPlacement({
+                  name: form.name,
+                  type: nextType,
+                  records: modal.data?.records || [],
+                  currentRecord: modal.data?.record,
+                }))
                 setValueError(validateCurrentValues(nextType, form.value))
               }}
+              disabled={isEdit}
             />
           </div>
         </div>
 
         <TextArea
-          label="Record Value"
-          placeholder="e.g. 192.168.10.12 or cdn.provider.edge.com"
+          label={valueConfig.label}
+          placeholder={valueConfig.placeholder}
           value={form.value}
           onChange={(event) => {
             const nextValue = event.target.value
             set('value', nextValue)
             setValueError(validateCurrentValues(form.type, nextValue))
           }}
-          rows={4}
-          helperText={getRecordValueHelperText(form.type)}
+          rows={valueConfig.rows}
+          helperText={valueConfig.helperText}
           error={!!valueError}
           errorMessage={valueError}
         />

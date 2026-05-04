@@ -151,7 +151,12 @@ export function ZoneRecords() {
             <button
               onClick={(event) => {
                 event.stopPropagation()
-                editModal.open({ zone: zoneName, record: row, onSuccess: loadRecords })
+                editModal.open({
+                  zone: zoneName,
+                  record: row,
+                  records,
+                  onSuccess: loadRecords,
+                })
               }}
               className="p-1 text-on-surface-variant hover:text-primary transition-colors"
               title="Edit record"
@@ -187,7 +192,7 @@ export function ZoneRecords() {
             </div>
           </div>
           {!isInternalZone && (
-            <Button icon="add" onClick={() => editModal.open({ zone: zoneName, onSuccess: loadRecords })}>
+            <Button icon="add" onClick={() => editModal.open({ zone: zoneName, records, onSuccess: loadRecords })}>
               Create Record
             </Button>
           )}
@@ -255,7 +260,12 @@ export function ZoneRecords() {
             onRowClick={(row) => detailsModal.open({
               zone: zoneName,
               record: row,
-              onEdit: () => editModal.open({ zone: zoneName, record: row, onSuccess: loadRecords }),
+              onEdit: () => editModal.open({
+                zone: zoneName,
+                record: row,
+                records,
+                onSuccess: loadRecords,
+              }),
             })}
           />
           <Pagination

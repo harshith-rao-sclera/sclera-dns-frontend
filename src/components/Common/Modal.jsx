@@ -1,4 +1,22 @@
+import { useEffect } from 'react'
+
 export function Modal({ isOpen, onClose, title = '', subtitle = '', children, footer = null, size = 'md' }) {
+  useEffect(() => {
+    if (!isOpen) return undefined
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose?.()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen, onClose])
+
   if (!isOpen) return null
 
   const widths = {
