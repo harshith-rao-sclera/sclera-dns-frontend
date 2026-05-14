@@ -1,6 +1,6 @@
 # dns_frontend
 
-A React + Vite control plane for the **ScleraDNS** HTTP API. It manages hosted zones, RRsets, and the custom "Smart IP" rule engine, and validates user input against the DNS RFCs before it leaves the browser.
+A React + Vite control plane for the **ScleraDNS** HTTP API. It manages hosted zones, RRsets, DNSSEC signing, and the custom "Smart IP" rule engine, and validates user input against the DNS RFCs before it leaves the browser.
 
 ## Stack
 
@@ -41,14 +41,15 @@ VITE_SCLERA_API_BASE_URL=http://localhost:8082 npm run dev
 
 ```
 src/
-  api/scleraApi.js         HTTP client + normalization helpers
+  api/scleraApi.js         HTTP client + normalization/validation helpers
   components/
-    Common/                Button, Modal, Table, TextField/TextArea, Select, Alert, Badge…
+    Common/                Button, Modal, Table, TextField/TextArea, Select, Alert, Badge, CopyButton, CodeBlock…
     Layout/                MainLayout, TopBar, Sidebar
     Modals/                EditRecord, RecordDetails, CreateZone, DeleteConfirmation, Smart IP modals
+    Zone/                  DnssecSection (collapsible DNSSEC panel for the zone detail page)
   context/                 Modal, Feedback, Theme providers
   hooks/                   useModal, useFeedback, useTheme
-  pages/                   HostedZonesList, ZoneRecords, SmartRulesList, ApiDocs
+  pages/                   HostedZonesList, ZoneRecords, SmartRulesList, ApiDocs, DnsReference
   styles/globals.css       Tailwind + design-system tokens
 ```
 
@@ -142,13 +143,16 @@ These aren't RFC requirements but reduce common user errors:
 The frontend talks to ScleraDNS over JSON/HTTP. Whether a true authoritative DNS server (UDP/TCP port 53, RFC 1035 wire format) sits behind `/resolve` is a backend concern and not visible from this repo. The frontend assumes:
 
 - The backend stores zones/RRsets faithfully and applies the values it receives.
-- DNSSEC signing/validation, AXFR/IXFR zone transfers, EDNS0, NOTIFY, and glue handling are backend responsibilities.
-- Cross-record validation (e.g. RFC 2181 §10.3 — MX/NS targets must not be CNAMEs) is not enforced on the client; the backend may or may not catch it.
+- DNSSEC key material, signing, and validation happen on the backend; the frontend only triggers `/secureZone` / `/unsecureZone` and displays the keys + DS records returned.
+- AXFR/IXFR zone transfers, EDNS0, NOTIFY, and wire-level glue handling are backend responsibilities.
+- Cross-record checks (e.g. RFC 2181 §10.3 — NS/MX targets must not be CNAMEs) are enforced on the client **only against records in the currently loaded zone**. A target in another zone can't be checked without a resolver, so the backend remains the final authority.
 
 ## Notable client behavior
 
 - **Helper text minimization** — the Record Name field stays clean by default; hints appear only when relevant (input ends with the zone, or the input contains non-ASCII characters and a punycode preview is needed).
 - **Per-row record actions** — each RRset row in the Zone Records table shows Edit + Delete, with locked icons and explanatory tooltips for SOA, apex NS, and internal-zone records.
+- **DNSSEC panel** — the zone detail page has a collapsible DNSSEC section that reads `/getZoneDNSSEC` on load, surfaces DS records (sorted SHA-256 → SHA-384 → SHA-1) with copy buttons, hides raw DNSKEYs behind a "Technical details" disclosure, and gates enable/disable behind confirmation modals. DNSSEC can also be toggled on at zone-creation time.
+- **Record type coverage** — A, AAAA, CNAME, ALIAS, MX, NS, PTR, TXT are creatable from the UI; SOA is system-managed.
 - **Single source of truth for RFC docs** — the `/reference` page renders directly from the `RFC_COMPLIANCE` data structure, so adding or removing an enforced rule means editing one place.
 
 ## License
