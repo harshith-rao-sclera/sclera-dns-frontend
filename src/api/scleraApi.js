@@ -49,6 +49,72 @@ export function trimTrailingDot(value = '') {
   return typeof value === 'string' ? value.replace(/\.$/, '') : value
 }
 
+export function toAsciiDomain(value = '') {
+  if (typeof value !== 'string') return value
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === '@' || trimmed === '*') return trimmed
+
+  const hadTrailingDot = trimmed.endsWith('.')
+  let core = hadTrailingDot ? trimmed.slice(0, -1) : trimmed
+
+  let prefix = ''
+  if (core.startsWith('*.')) {
+    prefix = '*.'
+    core = core.slice(2)
+  }
+
+  if (!core) return value
+
+  try {
+    const ascii = new URL(`http://${core}`).hostname
+    return `${prefix}${ascii}${hadTrailingDot ? '.' : ''}`
+  } catch {
+    return value
+  }
+}
+
+export function hasNonAscii(value = '') {
+  return typeof value === 'string' && /[^\x00-\x7f]/.test(value)
+}
+
+export const MAX_TTL = 2147483647
+
+export function validateTtl(value) {
+  if (value === '' || value === null || value === undefined) {
+    return 'TTL is required.'
+  }
+  const ttl = Number(value)
+  if (!Number.isInteger(ttl) || ttl < 0) {
+    return 'TTL must be a non-negative whole number.'
+  }
+  if (ttl > MAX_TTL) {
+    return `TTL must be at most ${MAX_TTL} seconds (RFC 2181).`
+  }
+  return ''
+}
+
+const ZONE_NAME_PATTERN = /^(?=.{1,253}\.?$)(?!-)(?:[a-zA-Z0-9_-]{1,63}(?<!-)\.)*[a-zA-Z0-9_-]{1,63}\.?$/
+
+export function validateZoneName(value = '') {
+  if (!value || !value.trim()) {
+    return 'Zone name is required.'
+  }
+  const ascii = toAsciiDomain(value.trim())
+  if (!ZONE_NAME_PATTERN.test(ascii)) {
+    return 'Zone name must be a valid domain (letters, digits, hyphens; labels up to 63 chars; no spaces or wildcards).'
+  }
+  return ''
+}
+
+const IPV4_OCTET = '(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'
+const IPV4_RE = new RegExp(`^${IPV4_OCTET}(\\.${IPV4_OCTET}){3}$`)
+const IPV6_RE = /^(([0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|([0-9A-Fa-f]{1,4}:){1,7}:|:((:[0-9A-Fa-f]{1,4}){1,7}|:)|([0-9A-Fa-f]{1,4}:){1,6}:[0-9A-Fa-f]{1,4}|([0-9A-Fa-f]{1,4}:){1,5}(:[0-9A-Fa-f]{1,4}){1,2}|([0-9A-Fa-f]{1,4}:){1,4}(:[0-9A-Fa-f]{1,4}){1,3}|([0-9A-Fa-f]{1,4}:){1,3}(:[0-9A-Fa-f]{1,4}){1,4}|([0-9A-Fa-f]{1,4}:){1,2}(:[0-9A-Fa-f]{1,4}){1,5}|[0-9A-Fa-f]{1,4}:((:[0-9A-Fa-f]{1,4}){1,6}))$/
+
+export function isIpAddress(value = '') {
+  const trimmed = String(value).trim()
+  return IPV4_RE.test(trimmed) || IPV6_RE.test(trimmed)
+}
+
 export function normalizeZoneName(value = '') {
   return trimTrailingDot(value).trim()
 }
@@ -319,6 +385,30 @@ export async function deleteSmartIPRule({ id, name }) {
     method: 'POST',
     url: '/deleteSmartIPRule',
     data,
+  })
+}
+
+export async function secureZone(zone) {
+  return request({
+    method: 'POST',
+    url: '/secureZone',
+    data: { zone: normalizeZoneName(zone) },
+  })
+}
+
+export async function unsecureZone(zone) {
+  return request({
+    method: 'POST',
+    url: '/unsecureZone',
+    data: { zone: normalizeZoneName(zone) },
+  })
+}
+
+export async function getZoneDNSSEC(zone) {
+  return request({
+    method: 'GET',
+    url: '/getZoneDNSSEC',
+    params: { zone: normalizeZoneName(zone) },
   })
 }
 

@@ -3,6 +3,7 @@ export function TextField({
   placeholder = '',
   icon = null,
   type = 'text',
+  helperText = '',
   error = false,
   errorMessage = '',
   className = '',
@@ -32,6 +33,7 @@ export function TextField({
           {...props}
         />
       </div>
+      {helperText && <p className="text-xs text-on-surface-variant">{helperText}</p>}
       {error && errorMessage && <span className="text-xs text-error">{errorMessage}</span>}
     </div>
   )

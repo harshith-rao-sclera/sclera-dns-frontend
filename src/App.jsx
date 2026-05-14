@@ -3,6 +3,7 @@ import { HostedZonesList } from './pages/HostedZonesList'
 import { ZoneRecords } from './pages/ZoneRecords'
 import { SmartRulesList } from './pages/SmartRulesList'
 import { ApiDocs } from './pages/ApiDocs'
+import { DnsReference } from './pages/DnsReference'
 import {
   EditRecordModal,
   RecordDetailsModal,
@@ -25,6 +26,7 @@ function AppContent() {
         <Route path="/zones/:zoneId" element={<ZoneRecords />} />
         <Route path="/rules" element={<SmartRulesList />} />
         <Route path="/docs" element={<ApiDocs />} />
+        <Route path="/reference" element={<DnsReference />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 

@@ -1,6 +1,20 @@
 import { MainLayout } from '../components/Layout/MainLayout'
-import { Badge } from '../components/Common'
+import { Badge, CodeBlock, CopyButton } from '../components/Common'
 import { API_BASE_URL } from '../api/scleraApi'
+
+function buildCurl(endpoint) {
+  if (endpoint.method === 'GET') {
+    const qs = endpoint.sampleQuery ? `?${endpoint.sampleQuery}` : ''
+    return `curl "${API_BASE_URL}${endpoint.path}${qs}"`
+  }
+  const lines = [`curl -X ${endpoint.method} "${API_BASE_URL}${endpoint.path}"`]
+  if (endpoint.body) {
+    const compact = endpoint.body.replace(/\s*\n\s*/g, ' ').trim()
+    lines.push('  -H "Content-Type: application/json"')
+    lines.push(`  -d '${compact}'`)
+  }
+  return lines.join(' \\\n')
+}
 
 const API_SECTIONS = [
   {
@@ -66,6 +80,7 @@ const API_SECTIONS = [
         path: '/getZone',
         summary: 'Fetch every RRset for a single zone.',
         params: 'Query: zone (required)',
+        sampleQuery: 'zone=example.com',
         body: null,
         responses: [
           { status: 200, body: '[{"name":"www.example.com.","type":"A","ttl":60,"records":[{"content":"1.2.3.4","disabled":false}]}]' },
@@ -93,6 +108,7 @@ const API_SECTIONS = [
         path: '/getRecord',
         summary: 'Fetch all values for one RRset.',
         params: 'Query: zone (required), subdomain, record_type (required)',
+        sampleQuery: 'zone=example.com&subdomain=www&record_type=A',
         body: null,
         responses: [
           { status: 200, body: '["1.2.3.4", "5.6.7.8"]' },
@@ -102,8 +118,8 @@ const API_SECTIONS = [
       {
         method: 'POST',
         path: '/addRecord',
-        summary: 'Add a single value to an RRset. Creates the zone if needed.',
-        params: 'subdomain uses "@" or "" for apex. record_type: A, AAAA, CNAME, SOA.',
+        summary: 'Add a single value to an RRset. Creates the zone if needed. The frontend exposes A, AAAA, CNAME, ALIAS, MX, NS, PTR, and TXT; SOA is managed by the system. ALIAS is a vendor extension (not in any DNS RFC) — the server resolves the target and returns its A/AAAA values on the wire, which makes it safe at the zone apex where CNAME is forbidden. The frontend-side subdomain field accepts plain labels (e.g. "www") and strips the zone suffix on submit, so passing "www.example.com" for zone "example.com" still resolves to subdomain "www".',
+        params: 'subdomain uses "@" or "" for apex. record_type: A, AAAA, CNAME, ALIAS, MX, NS, PTR, TXT (SOA is system-managed). MX values are "<preference> <hostname>".',
         body: '{ "zone": "example.com", "subdomain": "www", "record_type": "A", "value": "1.2.3.4", "ttl": 60 }',
         responses: [
           { status: 200, body: 'Record added successfully' },
@@ -198,6 +214,51 @@ const API_SECTIONS = [
     ],
   },
   {
+    title: 'DNSSEC',
+    accent: 'bg-fuchsia-500',
+    endpoints: [
+      {
+        method: 'POST',
+        path: '/secureZone',
+        summary: 'Provision a KSK + ZSK (ECDSA P-256) for the zone and return DS records that must be published at the parent registrar. Refuses if the zone already has cryptokeys — call /unsecureZone first to rotate.',
+        params: 'None',
+        body: '{ "zone": "example.com" }',
+        responses: [
+          { status: 200, body: '{"zone":"example.com.","secured":true,"keys":[{"id":1,"keytype":"ksk","active":true,"algorithm":"ECDSAP256SHA256","dnskey":"257 3 13 mdsswUyr3...","ds":["12345 13 2 abc...","12345 13 4 def..."]},{"id":2,"keytype":"zsk","active":true,"algorithm":"ECDSAP256SHA256","dnskey":"256 3 13 hijkLmno...","ds":null}]}' },
+          { status: 400, body: 'zone is required' },
+          { status: 404, body: 'Failed to secure zone: zone X not found' },
+          { status: 409, body: 'Failed to secure zone: zone X already has N cryptokey(s); call /unsecureZone first' },
+        ],
+      },
+      {
+        method: 'POST',
+        path: '/unsecureZone',
+        summary: 'Remove all cryptokeys from the zone and revert to unsigned. If the zone is publicly delegated with a DS record at its registrar, remove the DS record there first and wait for propagation — otherwise validators will SERVFAIL the entire domain.',
+        params: 'None',
+        body: '{ "zone": "example.com" }',
+        responses: [
+          { status: 200, body: 'Zone DNSSEC disabled' },
+          { status: 400, body: 'zone is required' },
+          { status: 404, body: 'Failed to unsecure zone: zone X not found' },
+        ],
+      },
+      {
+        method: 'GET',
+        path: '/getZoneDNSSEC',
+        summary: 'Return the zone\'s current DNSSEC state without modifying anything. Used by the frontend to populate the DNSSEC section on the zone detail page.',
+        params: 'Query: zone (required)',
+        sampleQuery: 'zone=example.com',
+        body: null,
+        responses: [
+          { status: 200, body: '{"zone":"example.com.","secured":false,"keys":null}' },
+          { status: 200, body: '{"zone":"example.com.","secured":true,"keys":[{"id":1,"keytype":"ksk","active":true,"algorithm":"ECDSAP256SHA256","dnskey":"257 3 13 ...","ds":["12345 13 2 ...","12345 13 4 ..."]},{"id":2,"keytype":"zsk","active":true,"algorithm":"ECDSAP256SHA256","dnskey":"256 3 13 ...","ds":null}]}' },
+          { status: 400, body: 'zone query parameter is required' },
+          { status: 404, body: 'zone X not found' },
+        ],
+      },
+    ],
+  },
+  {
     title: 'Resolver',
     accent: 'bg-rose-500',
     endpoints: [
@@ -206,6 +267,7 @@ const API_SECTIONS = [
         path: '/resolve',
         summary: 'Query the DNS server directly.',
         params: 'Query: name (required), type (required)',
+        sampleQuery: 'name=www.example.com&type=A',
         body: null,
         responses: [
           { status: 200, body: '[{"name":"www.example.com.","type":"A","ttl":60,"value":"www.example.com.\\t60\\tIN\\tA\\t1.2.3.4"}]' },
@@ -283,7 +345,7 @@ export function ApiDocs() {
         </section>
 
         <section className="px-6 pb-10">
-          <div className="grid gap-6 xl:grid-cols-[280px_1fr]">
+          <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
             <aside className="xl:sticky xl:top-20 xl:self-start">
               <div className="api-docs-card rounded-[24px] border border-border bg-surface-container-lowest/90 p-5 shadow-[0_12px_48px_color-mix(in_oklab,var(--color-on-surface)_8%,transparent)]">
                 <div className="mb-4 text-[10px] font-bold uppercase tracking-[0.28em] text-on-surface-variant">
@@ -300,16 +362,23 @@ export function ApiDocs() {
                       <span className={`h-2.5 w-2.5 rounded-full ${section.accent}`} />
                     </a>
                   ))}
+                  <a
+                    href="/reference"
+                    className="flex items-center justify-between rounded-2xl border border-transparent bg-surface-container-low px-3 py-3 text-sm font-medium text-on-surface-variant transition-colors hover:border-border hover:bg-surface-container-lowest hover:text-on-surface"
+                  >
+                    <span>DNS Reference &amp; RFCs</span>
+                    <span className="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_outward</span>
+                  </a>
                 </div>
               </div>
             </aside>
 
-            <div className="space-y-8">
+            <div className="min-w-0 space-y-8">
               {API_SECTIONS.map((section) => (
                 <section
                   key={section.title}
                   id={section.title.toLowerCase().replace(/\s+/g, '-')}
-                  className="api-docs-card rounded-[28px] border border-border bg-surface-container-lowest/90 p-6 shadow-[0_16px_60px_color-mix(in_oklab,var(--color-on-surface)_8%,transparent)]"
+                  className="api-docs-card min-w-0 rounded-[28px] border border-border bg-surface-container-lowest/90 p-6 shadow-[0_16px_60px_color-mix(in_oklab,var(--color-on-surface)_8%,transparent)]"
                 >
                   <div className="mb-6 flex items-center justify-between gap-4 border-b border-border pb-4">
                     <div className="flex items-center gap-3">
@@ -337,28 +406,34 @@ export function ApiDocs() {
                           </div>
                         </div>
 
-                        <div className="grid gap-5 px-5 py-5 lg:grid-cols-2">
-                          <div className="space-y-4">
-                            <div>
+                        <div className="min-w-0 space-y-5 px-5 py-5">
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            <div className="min-w-0">
                               <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
                                 Parameters
                               </div>
-                              <div className="api-docs-surface rounded-2xl border border-border bg-surface-container-lowest px-4 py-3 text-sm text-on-surface">
+                              <div className="api-docs-surface h-[calc(100%-1.75rem)] rounded-2xl border border-border bg-surface-container-lowest px-4 py-3 text-sm text-on-surface break-words">
                                 {endpoint.params}
                               </div>
                             </div>
 
-                            {endpoint.body && (
-                              <div>
+                            {endpoint.body ? (
+                              <div className="min-w-0">
+                                <CodeBlock label="Request Body" code={endpoint.body} />
+                              </div>
+                            ) : (
+                              <div className="min-w-0">
                                 <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
                                   Request Body
                                 </div>
-                                <pre className="api-docs-surface api-docs-code custom-scrollbar overflow-x-auto rounded-2xl border border-border px-4 py-3 text-xs leading-6">
-                                  <code>{endpoint.body}</code>
-                                </pre>
+                                <div className="api-docs-surface h-[calc(100%-1.75rem)] rounded-2xl border border-border bg-surface-container-lowest px-4 py-3 text-sm text-on-surface-variant">
+                                  No request body.
+                                </div>
                               </div>
                             )}
                           </div>
+
+                          <CodeBlock label="cURL" code={buildCurl(endpoint)} />
 
                           <div>
                             <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
@@ -368,13 +443,14 @@ export function ApiDocs() {
                               {endpoint.responses.map((response, index) => (
                                 <div
                                   key={`${endpoint.path}-${response.status}-${index}`}
-                                  className="api-docs-surface rounded-2xl border border-border bg-surface-container-lowest p-4"
+                                  className="overflow-hidden rounded-2xl border border-border bg-surface-container-lowest"
                                 >
-                                  <div className="mb-3 flex items-center gap-2">
+                                  <div className="flex items-center justify-between border-b border-border px-4 py-2">
                                     <StatusBadge status={response.status} />
+                                    <CopyButton text={response.body} />
                                   </div>
-                                  <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs leading-6 text-on-surface">
-                                    <code>{response.body}</code>
+                                  <pre className="custom-scrollbar overflow-x-auto whitespace-pre-wrap break-words px-4 py-3 text-xs leading-6 text-on-surface">
+                                    <code className="font-mono">{response.body}</code>
                                   </pre>
                                 </div>
                               ))}

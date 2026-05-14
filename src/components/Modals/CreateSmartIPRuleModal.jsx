@@ -9,6 +9,7 @@ import {
   listZones,
   isInternalSystemZone,
   normalizeRegexPattern,
+  validateTtl as validateTtlValue,
 } from '../../api/scleraApi'
 import { useFeedback } from '../../hooks/useFeedback'
 
@@ -88,12 +89,7 @@ export function CreateSmartIPRuleModal() {
 
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
 
-  const validateTtl = (value) => {
-    if (!value.trim()) return 'TTL is required.'
-    const ttl = Number(value)
-    if (!Number.isInteger(ttl) || ttl <= 0) return 'TTL must be a positive whole number.'
-    return ''
-  }
+  const validateTtl = (value) => validateTtlValue(value)
 
   const filteredZones = useMemo(
     () => availableZones.filter((zone) => zone.toLowerCase().includes(search.toLowerCase())),

@@ -13,6 +13,7 @@ import {
 } from '../api/scleraApi'
 import { useModal } from '../hooks/useModal'
 import { useFeedback } from '../hooks/useFeedback'
+import { DnssecSection } from '../components/Zone/DnssecSection'
 
 function mapRecordRows(rrsets, zoneName) {
   return rrsets.map((rrset) => {
@@ -35,6 +36,7 @@ export function ZoneRecords() {
   const { zoneId } = useParams()
   const detailsModal = useModal('recordDetails')
   const editModal = useModal('editRecord')
+  const deleteModal = useModal('deleteConfirm')
   const { showError } = useFeedback()
   const zoneName = decodeURIComponent(zoneId || 'example.com')
   const isInternalZone = isInternalSystemZone(zoneName)
@@ -129,25 +131,40 @@ export function ZoneRecords() {
     {
       key: 'actions',
       label: 'Actions',
-      width: '80px',
+      width: '120px',
       align: 'right',
-      render: (_, row) => (
-        <div className="flex justify-end gap-1">
-          {row.type === 'SOA' ? (
-            <span
-              className="inline-flex items-center justify-center p-1 text-outline"
-              title="SOA records cannot be edited here"
-            >
-              <span className="material-symbols-outlined text-[18px]">lock</span>
-            </span>
-          ) : isInternalZone ? (
-            <span
-              className="inline-flex items-center justify-center p-1 text-outline"
-              title="This internal zone is managed by the system"
-            >
-              <span className="material-symbols-outlined text-[18px]">shield_lock</span>
-            </span>
-          ) : (
+      render: (_, row) => {
+        const isApexNs = row.name === '@' && row.type === 'NS'
+        const isSoa = row.type === 'SOA'
+
+        if (isInternalZone) {
+          return (
+            <div className="flex justify-end gap-1">
+              <span
+                className="inline-flex items-center justify-center p-1 text-outline"
+                title="This internal zone is managed by the system"
+              >
+                <span className="material-symbols-outlined text-[18px]">shield_lock</span>
+              </span>
+            </div>
+          )
+        }
+
+        if (isSoa) {
+          return (
+            <div className="flex justify-end gap-1">
+              <span
+                className="inline-flex items-center justify-center p-1 text-outline"
+                title="SOA records are managed by the system"
+              >
+                <span className="material-symbols-outlined text-[18px]">lock</span>
+              </span>
+            </div>
+          )
+        }
+
+        return (
+          <div className="flex justify-end gap-1">
             <button
               onClick={(event) => {
                 event.stopPropagation()
@@ -163,9 +180,40 @@ export function ZoneRecords() {
             >
               <span className="material-symbols-outlined text-[18px]">edit</span>
             </button>
-          )}
-        </div>
-      ),
+            {isApexNs ? (
+              <span
+                className="inline-flex items-center justify-center p-1 text-outline"
+                title="Apex NS records are required (RFC 1035 §6.1) and cannot be deleted"
+              >
+                <span className="material-symbols-outlined text-[18px]">lock</span>
+              </span>
+            ) : (
+              <button
+                onClick={(event) => {
+                  event.stopPropagation()
+                  deleteModal.open({
+                    action: 'deleteRecordSet',
+                    payload: {
+                      zone: zoneName,
+                      subdomain: row.name,
+                      record_type: row.type,
+                    },
+                    name: `${row.name} ${row.type}`,
+                    title: `Delete ${row.type} record at ${row.name}?`,
+                    description: `This will remove all ${row.values.length} value${row.values.length === 1 ? '' : 's'} of the ${row.type} RRset at ${row.fullName}. This action cannot be undone.`,
+                    confirmLabel: 'Delete Record',
+                    onSuccess: loadRecords,
+                  })
+                }}
+                className="p-1 text-on-surface-variant hover:text-error transition-colors"
+                title="Delete record"
+              >
+                <span className="material-symbols-outlined text-[18px]">delete</span>
+              </button>
+            )}
+          </div>
+        )
+      },
     },
   ]
 
@@ -204,6 +252,12 @@ export function ZoneRecords() {
           <Alert title="System-managed zone">
             This zone is managed internally and cannot be changed from the frontend.
           </Alert>
+        </section>
+      )}
+
+      {!isInternalZone && (
+        <section className="px-6 pt-4">
+          <DnssecSection zoneName={zoneName} />
         </section>
       )}
 

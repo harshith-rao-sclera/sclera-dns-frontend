@@ -5,6 +5,7 @@ const navItems = [
   { path: '/', label: 'Hosted Zones', icon: 'language', fillActive: true },
   { path: '/rules', label: 'Smart IP Rules', icon: 'rule', fillActive: false },
   { path: '/docs', label: 'API Docs', icon: 'terminal', fillActive: false },
+  { path: '/reference', label: 'DNS Reference', icon: 'menu_book', fillActive: false },
 ]
 
 export function Sidebar({ isCollapsed = false, onToggle = () => {} }) {
