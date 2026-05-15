@@ -1,5 +1,6 @@
+import { useMemo, useState } from 'react'
 import { MainLayout } from '../components/Layout/MainLayout'
-import { Badge, CodeBlock, CopyButton } from '../components/Common'
+import { Badge, CodeBlock, CopyButton, TextField } from '../components/Common'
 import { API_BASE_URL } from '../api/scleraApi'
 
 function buildCurl(endpoint) {
@@ -133,6 +134,20 @@ const API_SECTIONS = [
         body: '{ "zone": "example.com", "subdomain": "www", "record_type": "A", "values": ["9.9.9.9"], "ttl": 60 }',
         responses: [
           { status: 200, body: 'Record updated successfully' },
+        ],
+      },
+      {
+        method: 'PUT',
+        path: '/updateSOA',
+        summary: 'Update the zone SOA with structured fields. Validates against RFC 1912 §2.2 (refresh/retry/expire/minimum bounds + retry < refresh) and RFC 2308 (negative-cache minimum). The frontend never sends "serial" — the backend auto-increments it (current + 1) so the SOA always advances monotonically. The "rname" field uses dot-encoding: "hostmaster.example.com" represents hostmaster@example.com.',
+        params: 'None',
+        body: '{\n  "zone":    "example.com",\n  "mname":   "ns1.example.com",\n  "rname":   "hostmaster.example.com",\n  "refresh": 10800,\n  "retry":   3600,\n  "expire":  1209600,\n  "minimum": 3600,\n  "ttl":     3600\n}',
+        responses: [
+          { status: 200, body: 'SOA updated successfully' },
+          { status: 400, body: 'retry must be less than refresh' },
+          { status: 400, body: 'refresh out of range [1200, 43200]' },
+          { status: 404, body: 'zone not found' },
+          { status: 500, body: 'PDNS PATCH failed: ...' },
         ],
       },
       {
@@ -305,7 +320,28 @@ function StatusBadge({ status }) {
   )
 }
 
+function endpointMatches(endpoint, query) {
+  if (!query) return true
+  const lower = query.toLowerCase()
+  return [endpoint.method, endpoint.path, endpoint.summary, endpoint.params]
+    .some((f) => typeof f === 'string' && f.toLowerCase().includes(lower))
+}
+
 export function ApiDocs() {
+  const [search, setSearch] = useState('')
+  const query = search.trim()
+
+  const filteredSections = useMemo(
+    () => API_SECTIONS
+      .map((section) => ({
+        ...section,
+        endpoints: section.endpoints.filter((e) => endpointMatches(e, query)),
+      }))
+      .filter((section) => section.endpoints.length > 0),
+    [query],
+  )
+  const totalEndpoints = filteredSections.reduce((sum, s) => sum + s.endpoints.length, 0)
+
   return (
     <MainLayout breadcrumbs={[{ label: 'API Docs' }]}>
       <div className="api-docs-page min-h-full">
@@ -329,6 +365,14 @@ export function ApiDocs() {
                   A frontend-friendly reference for the ScleraDNS service. All error responses are plain text,
                   and zone names returned by the backend may include trailing dots.
                 </p>
+                <div className="mt-5 max-w-md">
+                  <TextField
+                    icon="search"
+                    placeholder="Search endpoints (e.g. zone, smart, dnssec)…"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                </div>
               </div>
               <div className="api-docs-card api-docs-shell grid gap-3 rounded-3xl border border-border px-5 py-4 shadow-lg">
                 <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-on-surface-variant">
@@ -352,7 +396,7 @@ export function ApiDocs() {
                   Quick Index
                 </div>
                 <div className="space-y-2">
-                  {API_SECTIONS.map((section) => (
+                  {filteredSections.map((section) => (
                     <a
                       key={section.title}
                       href={`#${section.title.toLowerCase().replace(/\s+/g, '-')}`}
@@ -362,6 +406,9 @@ export function ApiDocs() {
                       <span className={`h-2.5 w-2.5 rounded-full ${section.accent}`} />
                     </a>
                   ))}
+                  {filteredSections.length === 0 && (
+                    <p className="text-xs italic text-on-surface-variant">No endpoints match your search.</p>
+                  )}
                   <a
                     href="/reference"
                     className="flex items-center justify-between rounded-2xl border border-transparent bg-surface-container-low px-3 py-3 text-sm font-medium text-on-surface-variant transition-colors hover:border-border hover:bg-surface-container-lowest hover:text-on-surface"
@@ -374,7 +421,20 @@ export function ApiDocs() {
             </aside>
 
             <div className="min-w-0 space-y-8">
-              {API_SECTIONS.map((section) => (
+              {filteredSections.length === 0 && (
+                <div className="api-docs-card rounded-[28px] border border-border bg-surface-container-lowest/90 p-8 text-center">
+                  <p className="text-sm text-on-surface-variant">
+                    No endpoints match <strong className="text-on-surface">"{query}"</strong>. Try the {' '}
+                    <a href="/reference" className="font-medium text-primary hover:underline">DNS Reference</a> for terminology.
+                  </p>
+                </div>
+              )}
+              {query && totalEndpoints > 0 && (
+                <p className="text-xs text-on-surface-variant">
+                  Showing {totalEndpoints} endpoint{totalEndpoints === 1 ? '' : 's'} matching "{query}".
+                </p>
+              )}
+              {filteredSections.map((section) => (
                 <section
                   key={section.title}
                   id={section.title.toLowerCase().replace(/\s+/g, '-')}

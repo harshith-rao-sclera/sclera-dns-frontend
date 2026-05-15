@@ -36,6 +36,7 @@ export function ZoneRecords() {
   const { zoneId } = useParams()
   const detailsModal = useModal('recordDetails')
   const editModal = useModal('editRecord')
+  const editSoaModal = useModal('editSoa')
   const deleteModal = useModal('deleteConfirm')
   const { showError } = useFeedback()
   const zoneName = decodeURIComponent(zoneId || 'example.com')
@@ -153,9 +154,23 @@ export function ZoneRecords() {
         if (isSoa) {
           return (
             <div className="flex justify-end gap-1">
+              <button
+                onClick={(event) => {
+                  event.stopPropagation()
+                  editSoaModal.open({
+                    zone: zoneName,
+                    record: row,
+                    onSuccess: loadRecords,
+                  })
+                }}
+                className="p-1 text-on-surface-variant hover:text-primary transition-colors"
+                title="Edit SOA"
+              >
+                <span className="material-symbols-outlined text-[18px]">edit</span>
+              </button>
               <span
                 className="inline-flex items-center justify-center p-1 text-outline"
-                title="SOA records are managed by the system"
+                title="SOA records cannot be deleted — every zone needs exactly one"
               >
                 <span className="material-symbols-outlined text-[18px]">lock</span>
               </span>

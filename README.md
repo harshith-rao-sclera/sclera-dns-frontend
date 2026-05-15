@@ -34,8 +34,8 @@ VITE_SCLERA_API_BASE_URL=http://localhost:8082 npm run dev
 | `/` | `HostedZonesList` | List, create, and bulk-delete zones |
 | `/zones/:zoneId` | `ZoneRecords` | View, create, edit, and delete RRsets in one zone; DNSSEC panel |
 | `/rules` | `SmartRulesList` | Manage Smart IP regex rules and zone associations |
-| `/docs` | `ApiDocs` | Live HTTP API reference — formatted request/response payloads, copy buttons, per-endpoint cURL |
-| `/reference` | `DnsReference` | DNS record types, core concepts, DNSSEC terminology, and the RFC compliance rules the frontend enforces |
+| `/docs` | `ApiDocs` | Live HTTP API reference — searchable, formatted request/response payloads, copy buttons, per-endpoint cURL |
+| `/reference` | `DnsReference` | Searchable guide: record types (with SOA field breakdown), email-auth records (SPF / DKIM / DMARC / BIMI / MTA-STS / TLSRPT), core concepts, DNSSEC terminology, and the RFC compliance rules the frontend enforces |
 
 ## Project layout
 
@@ -68,6 +68,7 @@ ScleraDNS is an HTTP/JSON control plane (not a DNS-protocol server itself — se
 | GET | `/getRecord` | All values for one RRset |
 | POST | `/addRecord` | Append one value to an RRset |
 | PUT | `/updateRecord` | Replace all values in an RRset |
+| PUT | `/updateSOA` | Update zone SOA with structured fields (RFC 1912 §2.2 / RFC 2308 validation; serial is auto-incremented by the backend, never sent from the UI) |
 | POST | `/deleteRecord` | Remove one value (RRset auto-deleted when last value goes) |
 | POST | `/deleteAllRecords` | Delete a whole RRset |
 | POST | `/addSmartIPRule` | Create or update a Smart IP regex rule |
@@ -121,7 +122,7 @@ The browser validates this before any data is sent to the backend. The same list
 - **RFC 2181 §8** — TTL must be a non-negative integer ≤ 2147483647 (0 means "do not cache").
 
 ### Zone integrity
-- **RFC 1035 §3.3.13** — SOA records are system-managed; not editable or deletable from the UI.
+- **RFC 1035 §3.3.13 / RFC 1912 §2.2 / RFC 2308** — SOA records are editable via a structured form (`PUT /updateSOA`) that validates timer ranges (refresh 1200-43200, retry 120-7200 and `< refresh`, expire 1209600-2419200, minimum 60-86400). The backend auto-increments the serial on every change — the UI does not expose it. SOA records cannot be deleted — every zone needs exactly one.
 - **RFC 1035 §6.1 / RFC 1912 §2.8** — The apex NS RRset cannot be deleted.
 - **RFC 1035 §2.3.4** — Zone names are validated as proper domain names on creation (length, label rules, IDN auto-punycoding).
 - **RFC 1034 §4.2.2** — On zone creation, in-bailiwick nameserver hosts must include at least one glue IP; out-of-bailiwick hosts must not.
@@ -152,7 +153,9 @@ The frontend talks to ScleraDNS over JSON/HTTP. Whether a true authoritative DNS
 - **Helper text minimization** — the Record Name field stays clean by default; hints appear only when relevant (input ends with the zone, or the input contains non-ASCII characters and a punycode preview is needed).
 - **Per-row record actions** — each RRset row in the Zone Records table shows Edit + Delete, with locked icons and explanatory tooltips for SOA, apex NS, and internal-zone records.
 - **DNSSEC panel** — the zone detail page has a collapsible DNSSEC section that reads `/getZoneDNSSEC` on load, surfaces DS records (sorted SHA-256 → SHA-384 → SHA-1) with copy buttons, hides raw DNSKEYs behind a "Technical details" disclosure, and gates enable/disable behind confirmation modals. DNSSEC can also be toggled on at zone-creation time.
-- **Record type coverage** — A, AAAA, CNAME, ALIAS, MX, NS, PTR, TXT are creatable from the UI; SOA is system-managed.
+- **Record type coverage** — A, AAAA, CNAME, ALIAS, MX, NS, PTR, TXT are creatable from the UI. SOA is editable via a dedicated structured form (MNAME / RNAME / REFRESH / RETRY / EXPIRE / MINIMUM / TTL — full field breakdown documented on the Reference page). Serial is auto-incremented by the backend and never exposed in the UI. SOA records are never deletable.
+- **Email-authentication reference** — `/reference` documents SPF, DKIM, DMARC, BIMI, MTA-STS, and TLSRPT as conventional TXT-record patterns (owner name, format, example, governing RFC).
+- **Searchable docs** — both `/docs` and `/reference` have a top-of-page search that filters the visible sections live (by endpoint path/summary on `/docs`; by type/term/RFC on `/reference`). The sidebar quick-index follows the filter.
 - **Single source of truth for RFC docs** — the `/reference` page renders directly from the `RFC_COMPLIANCE` data structure, so adding or removing an enforced rule means editing one place.
 
 ## License

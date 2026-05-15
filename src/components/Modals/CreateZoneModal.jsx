@@ -300,60 +300,55 @@ export function CreateZoneModal() {
                         : 'border-outline-variant/40 bg-surface-container-lowest/60'
                     }`}
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 min-w-0 space-y-1.5">
-                        <div className="flex min-h-[24px] flex-wrap items-center gap-x-2 gap-y-1">
-                          <label className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
-                            Nameserver Hostname
-                          </label>
-                          {isIn && <InBailiwickBadge />}
-                        </div>
-                        <TextField
-                          placeholder="ns1.example.net"
-                          value={ns.host}
-                          onChange={(event) => updateNs(index, 'host', event.target.value)}
-                        />
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5">
+                      {/* Row 1: labels */}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <label className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
+                          Nameserver Hostname
+                        </label>
+                        {isIn && <InBailiwickBadge />}
                       </div>
-
-                      <div className="flex-1 min-w-0 space-y-1.5">
-                        <div className="flex min-h-[24px] items-center">
-                          {isIn && (
-                            <label className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
-                              Glue IP Address
-                            </label>
-                          )}
-                        </div>
-                        {isIn ? (
-                          <TextField
-                            placeholder="192.0.2.10, 2001:db8::10"
-                            value={ns.ipsRaw}
-                            onChange={(event) => updateNs(index, 'ipsRaw', event.target.value)}
-                            helperText={asciiZone ? `Required as the hostname is within ${asciiZone}.` : undefined}
-                          />
-                        ) : (
-                          <div className="flex h-9 items-center">
-                            <p className={isOut ? 'text-sm italic text-on-surface-variant' : 'text-xs italic text-on-surface-variant'}>
-                              {isOut
-                                ? 'No glue records required'
-                                : zone.trim()
-                                  ? 'Bailiwick will be detected once you enter a host.'
-                                  : 'Enter the domain name above to detect bailiwick.'}
-                            </p>
-                          </div>
+                      <div className="flex items-center">
+                        {isIn && (
+                          <label className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
+                            Glue IP Address
+                          </label>
                         )}
                       </div>
+                      <div />
 
-                      <div className="shrink-0 flex flex-col">
-                        <div className="min-h-[24px]" />
-                        <button
-                          type="button"
-                          onClick={() => removeNs(index)}
-                          className="p-2 text-outline hover:text-error transition-colors"
-                          title="Remove nameserver"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">delete</span>
-                        </button>
-                      </div>
+                      {/* Row 2: inputs */}
+                      <TextField
+                        placeholder="ns1.example.net"
+                        value={ns.host}
+                        onChange={(event) => updateNs(index, 'host', event.target.value)}
+                      />
+                      {isIn ? (
+                        <TextField
+                          placeholder="192.0.2.10, 2001:db8::10"
+                          value={ns.ipsRaw}
+                          onChange={(event) => updateNs(index, 'ipsRaw', event.target.value)}
+                          helperText={asciiZone ? `Required as the hostname is within ${asciiZone}.` : undefined}
+                        />
+                      ) : (
+                        <div className="flex h-9 items-center">
+                          <p className={isOut ? 'text-sm italic text-on-surface-variant' : 'text-xs italic text-on-surface-variant'}>
+                            {isOut
+                              ? 'No glue records required'
+                              : zone.trim()
+                                ? 'Bailiwick will be detected once you enter a host.'
+                                : 'Enter the domain name above to detect bailiwick.'}
+                          </p>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeNs(index)}
+                        className="p-2 text-outline hover:text-error transition-colors"
+                        title="Remove nameserver"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                      </button>
                     </div>
 
                     {nsErrors[index] && (

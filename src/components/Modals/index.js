@@ -1,4 +1,5 @@
 export { EditRecordModal } from './EditRecordModal'
+export { EditSoaModal } from './EditSoaModal'
 export { RecordDetailsModal } from './RecordDetailsModal'
 export { SmartRuleDetailsModal } from './SmartRuleDetailsModal'
 export { CreateSmartIPRuleModal } from './CreateSmartIPRuleModal'

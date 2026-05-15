@@ -285,6 +285,27 @@ export async function deleteRecord({ zone, subdomain = '', record_type, value })
   })
 }
 
+export async function updateSOA({ zone, mname, rname, refresh, retry, expire, minimum, ttl, serial }) {
+  const data = {
+    zone: normalizeZoneName(zone),
+    mname: trimTrailingDot(toAsciiDomain(mname)),
+    rname: trimTrailingDot(toAsciiDomain(rname)),
+    refresh: Number(refresh),
+    retry: Number(retry),
+    expire: Number(expire),
+    minimum: Number(minimum),
+    ttl: Number(ttl),
+  }
+  if (serial !== undefined && serial !== null && String(serial).trim() !== '') {
+    data.serial = Number(serial)
+  }
+  return request({
+    method: 'PUT',
+    url: '/updateSOA',
+    data,
+  })
+}
+
 export async function deleteAllRecords({ zone, subdomain = '', record_type }) {
   return request({
     method: 'POST',

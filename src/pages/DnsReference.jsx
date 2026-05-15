@@ -1,5 +1,6 @@
+import { useMemo, useState } from 'react'
 import { MainLayout } from '../components/Layout/MainLayout'
-import { Badge } from '../components/Common'
+import { Badge, TextField } from '../components/Common'
 
 const RECORD_TYPES = [
   {
@@ -70,9 +71,75 @@ const RECORD_TYPES = [
     type: 'SOA',
     title: 'Start of Authority',
     what: 'Zone-level metadata: primary nameserver, admin contact, serial number, and timing parameters.',
-    how: 'Exactly one SOA exists per zone, at the apex. The serial number drives zone-transfer freshness; the timers control secondary refresh behavior. Managed by the system — not editable from this frontend.',
+    how: 'Exactly one SOA exists per zone, at the apex. The serial drives zone-transfer freshness; the timers control secondary refresh behavior. The SOA is editable from the UI via a structured form (PUT /updateSOA) — the backend validates timers against RFC 1912 §2.2 and auto-increments the serial on every change so the UI never needs to expose it.',
     example: 'example.com.  IN  SOA  ns1.example.com. admin.example.com. 2024010101 7200 3600 1209600 3600',
-    rfc: 'RFC 1035 §3.3.13',
+    rfc: 'RFC 1035 §3.3.13 (timers redefined by RFC 2308)',
+    fields: [
+      { name: 'MNAME', sample: 'ns1.example.com.', description: 'Primary master nameserver — the authoritative source for this zone.' },
+      { name: 'RNAME', sample: 'admin.example.com.', description: 'Responsible-party email, with the first dot replacing the "@" (admin.example.com → admin@example.com).' },
+      { name: 'SERIAL', sample: '2024010101', description: 'Zone serial number — incremented on every change. Secondaries compare this to detect that they need to re-transfer.' },
+      { name: 'REFRESH', sample: '7200', description: 'Seconds between secondary refresh polls of the primary.' },
+      { name: 'RETRY', sample: '3600', description: 'Seconds to wait before retrying a failed refresh.' },
+      { name: 'EXPIRE', sample: '1209600', description: 'Seconds after which a secondary stops serving the zone if it cannot reach the primary (here, 14 days).' },
+      { name: 'MINIMUM', sample: '3600', description: 'TTL for negative-cache responses (NXDOMAIN / no-data) per RFC 2308 — originally the zone-wide minimum TTL.' },
+    ],
+  },
+]
+
+const EMAIL_AUTH = [
+  {
+    name: 'SPF',
+    fullName: 'Sender Policy Framework',
+    owner: 'Zone apex (example.com)',
+    what: 'Lists which hosts are authorized to send email on behalf of the domain. Receivers reject mail from anywhere else.',
+    how: 'Published as a single TXT record at the apex with a "v=spf1" prefix and a list of mechanisms (include:, ip4:, ip6:, a:, mx:) terminated by an "all" rule. "-all" hard-fails unauthorized senders; "~all" soft-fails (suspicious but not rejected).',
+    example: 'example.com.  3600  IN  TXT  "v=spf1 include:_spf.google.com ~all"',
+    rfc: 'RFC 7208',
+  },
+  {
+    name: 'DKIM',
+    fullName: 'DomainKeys Identified Mail',
+    owner: '<selector>._domainkey.example.com',
+    what: 'Lets the sending mail server cryptographically sign outgoing messages so receivers can verify the body and key headers were not tampered with in transit.',
+    how: 'For each signing key (the "selector"), a TXT record at <selector>._domainkey.<domain> publishes the public key. The sending server adds a "DKIM-Signature" header; receivers fetch the TXT, look up the public key, and verify the signature.',
+    example: 'mail._domainkey.example.com.  3600  IN  TXT  "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQ..."',
+    rfc: 'RFC 6376',
+  },
+  {
+    name: 'DMARC',
+    fullName: 'Domain-based Message Authentication, Reporting and Conformance',
+    owner: '_dmarc.example.com',
+    what: 'Tells receivers what to do with mail that fails SPF or DKIM (none / quarantine / reject), and where to send aggregate or forensic reports.',
+    how: 'A single TXT record at _dmarc.<domain> with a "v=DMARC1" prefix. Common tags: p= (policy: none/quarantine/reject), rua= (aggregate report mailbox), ruf= (forensic), sp= (subdomain policy), pct= (rollout percentage), adkim/aspf= (alignment strictness).',
+    example: '_dmarc.example.com.  3600  IN  TXT  "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com; pct=100"',
+    rfc: 'RFC 7489',
+  },
+  {
+    name: 'BIMI',
+    fullName: 'Brand Indicators for Message Identification',
+    owner: '<selector>._bimi.example.com (selector is usually "default")',
+    what: 'Lets the domain advertise a verified logo URL that supporting mail clients (Gmail, Apple Mail, Yahoo) display next to authenticated messages.',
+    how: 'A TXT record at default._bimi.<domain> pointing at an SVG-Tiny logo (l=) and optionally a Verified Mark Certificate (a=). Requires DMARC at p=quarantine or p=reject. Most providers also require the VMC.',
+    example: 'default._bimi.example.com.  3600  IN  TXT  "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem"',
+    rfc: 'IETF draft (not yet a finalized RFC)',
+  },
+  {
+    name: 'MTA-STS',
+    fullName: 'SMTP MTA Strict Transport Security',
+    owner: '_mta-sts.example.com',
+    what: 'Forces sending mail servers to use TLS — and to validate the certificate — when delivering mail to the domain. Closes the downgrade-attack window in vanilla SMTP.',
+    how: 'A TXT record at _mta-sts.<domain> with a policy "id". The actual policy (mode, allowed MX hosts, max age) is served separately as text at https://mta-sts.<domain>/.well-known/mta-sts.txt. Senders cache the policy until the id changes.',
+    example: '_mta-sts.example.com.  3600  IN  TXT  "v=STSv1; id=20240101000000"',
+    rfc: 'RFC 8461',
+  },
+  {
+    name: 'TLSRPT',
+    fullName: 'SMTP TLS Reporting',
+    owner: '_smtp._tls.example.com',
+    what: 'Asks senders to report TLS connection failures (handshake errors, certificate mismatches, MTA-STS violations) so the domain owner can detect misconfiguration or active interference.',
+    how: 'A TXT record at _smtp._tls.<domain> declaring where to send daily aggregate reports — either a mailto: address (rua=mailto:...) or an HTTPS endpoint (rua=https://...).',
+    example: '_smtp._tls.example.com.  3600  IN  TXT  "v=TLSRPTv1; rua=mailto:tls-reports@example.com"',
+    rfc: 'RFC 8460',
   },
 ]
 
@@ -193,7 +260,7 @@ const RFC_COMPLIANCE = [
   {
     category: 'Zone Integrity',
     rules: [
-      { rfc: 'RFC 1035 §3.3.13', rule: 'SOA records are managed by the system and cannot be edited or deleted from the frontend.' },
+      { rfc: 'RFC 1035 §3.3.13 / RFC 1912 §2.2 / RFC 2308', rule: 'SOA records are editable via a dedicated structured endpoint (PUT /updateSOA) with timer-range validation (refresh 1200-43200, retry 120-7200, expire 1209600-2419200, minimum 60-86400, retry < refresh). The backend auto-increments the serial on every change — the UI does not expose it. SOA records cannot be deleted — every zone needs exactly one.' },
       { rfc: 'RFC 1035 §6.1 / RFC 1912 §2.8', rule: 'The apex NS RRset cannot be deleted — every zone must retain authoritative nameservers at the apex.' },
       { rfc: 'RFC 1035 §2.3.4', rule: 'Zone names are validated as proper domain names on creation (length, label rules, IDN auto-punycoding).' },
       { rfc: 'RFC 1034 §4.2.2', rule: 'On zone creation, in-bailiwick nameserver hosts must include at least one glue IP; out-of-bailiwick hosts must not.' },
@@ -204,16 +271,23 @@ const RFC_COMPLIANCE = [
 
 const INDEX = [
   { id: 'record-types', label: 'Record Types', accent: 'bg-violet-500' },
+  { id: 'email-auth', label: 'Email Authentication', accent: 'bg-rose-500' },
   { id: 'core-concepts', label: 'Core Concepts', accent: 'bg-sky-500' },
   { id: 'dnssec', label: 'DNSSEC Terms', accent: 'bg-fuchsia-500' },
   { id: 'rfc-compliance', label: 'RFC Compliance', accent: 'bg-indigo-500' },
 ]
 
+function matches(query, ...fields) {
+  if (!query) return true
+  const lower = query.toLowerCase()
+  return fields.some((f) => typeof f === 'string' && f.toLowerCase().includes(lower))
+}
+
 function SectionCard({ id, accent, title, count, countLabel, children }) {
   return (
     <section
       id={id}
-      className="api-docs-card rounded-[28px] border border-border bg-surface-container-lowest/90 p-6 shadow-[0_16px_60px_color-mix(in_oklab,var(--color-on-surface)_8%,transparent)]"
+      className="api-docs-card min-w-0 rounded-[28px] border border-border bg-surface-container-lowest/90 p-6 shadow-[0_16px_60px_color-mix(in_oklab,var(--color-on-surface)_8%,transparent)]"
     >
       <div className="mb-6 flex items-center justify-between gap-4 border-b border-border pb-4">
         <div className="flex items-center gap-3">
@@ -228,7 +302,54 @@ function SectionCard({ id, accent, title, count, countLabel, children }) {
 }
 
 export function DnsReference() {
-  const rfcCount = RFC_COMPLIANCE.reduce((sum, group) => sum + group.rules.length, 0)
+  const [search, setSearch] = useState('')
+  const query = search.trim()
+
+  const filteredRecordTypes = useMemo(
+    () => RECORD_TYPES.filter((r) => matches(
+      query, r.type, r.title, r.what, r.how, r.example, r.rfc,
+      ...(r.fields ? r.fields.flatMap((f) => [f.name, f.description, f.sample]) : []),
+    )),
+    [query],
+  )
+
+  const filteredEmailAuth = useMemo(
+    () => EMAIL_AUTH.filter((e) => matches(
+      query, e.name, e.fullName, e.owner, e.what, e.how, e.example, e.rfc,
+    )),
+    [query],
+  )
+
+  const filteredConcepts = useMemo(
+    () => CONCEPTS.filter((c) => matches(query, c.term, c.definition)),
+    [query],
+  )
+
+  const filteredDnssec = useMemo(
+    () => DNSSEC_TERMS.filter((d) => matches(query, d.term, d.definition)),
+    [query],
+  )
+
+  const filteredRfc = useMemo(
+    () => RFC_COMPLIANCE
+      .map((group) => ({
+        ...group,
+        rules: group.rules.filter((r) => matches(query, group.category, r.rfc, r.rule)),
+      }))
+      .filter((group) => group.rules.length > 0),
+    [query],
+  )
+
+  const visibility = {
+    'record-types': filteredRecordTypes.length > 0,
+    'email-auth': filteredEmailAuth.length > 0,
+    'core-concepts': filteredConcepts.length > 0,
+    'dnssec': filteredDnssec.length > 0,
+    'rfc-compliance': filteredRfc.length > 0,
+  }
+  const anyVisible = Object.values(visibility).some(Boolean)
+
+  const rfcCount = filteredRfc.reduce((sum, group) => sum + group.rules.length, 0)
 
   return (
     <MainLayout breadcrumbs={[{ label: 'DNS Reference' }]}>
@@ -240,18 +361,27 @@ export function DnsReference() {
             <div className="api-docs-card relative overflow-hidden rounded-[28px] border border-border bg-surface-container-lowest/90 p-8 shadow-[0_20px_80px_color-mix(in_oklab,var(--color-on-surface)_10%,transparent)]">
               <div className="absolute -right-10 -top-12 h-40 w-40 rounded-full bg-violet-500/12 blur-3xl" />
               <div className="absolute bottom-0 right-20 h-24 w-24 rounded-full bg-fuchsia-500/12 blur-2xl" />
-              <div className="relative max-w-3xl">
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface-container-low px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.28em] text-on-surface-variant">
-                  <span className="h-2 w-2 rounded-full bg-violet-500" />
-                  Concepts & Terminology
+              <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                <div className="max-w-3xl">
+                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface-container-low px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.28em] text-on-surface-variant">
+                    <span className="h-2 w-2 rounded-full bg-violet-500" />
+                    Concepts &amp; Terminology
+                  </div>
+                  <h1 className="font-serif text-4xl leading-tight text-on-surface md:text-5xl">
+                    DNS Reference — types, terms, and the rules this system enforces.
+                  </h1>
+                  <p className="mt-4 max-w-2xl text-sm leading-7 text-on-surface-variant">
+                    A plain-language guide to every record type you can create, email-authentication records (SPF / DKIM / DMARC / BIMI / MTA-STS / TLSRPT), core DNS concepts, DNSSEC terminology, and the exact RFC rules the frontend validates before anything reaches the server.
+                  </p>
                 </div>
-                <h1 className="font-serif text-4xl leading-tight text-on-surface md:text-5xl">
-                  DNS Reference — types, terms, and the rules this system enforces.
-                </h1>
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-on-surface-variant">
-                  A plain-language guide to every record type you can create, the core DNS concepts behind them,
-                  DNSSEC terminology, and the exact RFC rules the frontend validates before anything reaches the server.
-                </p>
+                <div className="w-full max-w-sm">
+                  <TextField
+                    icon="search"
+                    placeholder="Search types, terms, RFCs…"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                </div>
               </div>
             </div>
           </section>
@@ -264,7 +394,7 @@ export function DnsReference() {
                     Quick Index
                   </div>
                   <div className="space-y-2">
-                    {INDEX.map((item) => (
+                    {INDEX.filter((item) => visibility[item.id]).map((item) => (
                       <a
                         key={item.id}
                         href={`#${item.id}`}
@@ -274,139 +404,240 @@ export function DnsReference() {
                         <span className={`h-2.5 w-2.5 rounded-full ${item.accent}`} />
                       </a>
                     ))}
+                    {!anyVisible && (
+                      <p className="text-xs italic text-on-surface-variant">No sections match your search.</p>
+                    )}
                   </div>
                 </div>
               </aside>
 
               <div className="min-w-0 space-y-8">
-                <SectionCard
-                  id="record-types"
-                  accent="bg-violet-500"
-                  title="Record Types"
-                  count={RECORD_TYPES.length}
-                  countLabel="types"
-                >
-                  <div className="space-y-4">
-                    {RECORD_TYPES.map((record) => (
-                      <article
-                        key={record.type}
-                        className="api-docs-card overflow-hidden rounded-[24px] border border-border bg-surface-container-lowest/95"
-                      >
-                        <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
-                          <code className="rounded-lg bg-primary/10 px-2.5 py-1 text-sm font-bold text-primary">
-                            {record.type}
-                          </code>
-                          <span className="text-sm font-semibold text-on-surface">{record.title}</span>
-                          <span className="ml-auto rounded-md bg-surface-container px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
-                            {record.rfc}
-                          </span>
-                        </div>
-                        <div className="space-y-3 px-5 py-4">
-                          <div>
-                            <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
-                              What it does
-                            </span>
-                            <p className="mt-1 text-sm leading-6 text-on-surface">{record.what}</p>
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
-                              How it works
-                            </span>
-                            <p className="mt-1 text-sm leading-6 text-on-surface-variant">{record.how}</p>
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
-                              Example
-                            </span>
-                            <pre className="mt-1 overflow-x-auto rounded-xl border border-border bg-surface-container-lowest px-4 py-2.5 text-xs leading-6">
-                              <code className="font-mono text-on-surface">{record.example}</code>
-                            </pre>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
+                {!anyVisible && (
+                  <div className="api-docs-card rounded-[28px] border border-border bg-surface-container-lowest/90 p-8 text-center">
+                    <p className="text-sm text-on-surface-variant">
+                      No types, terms, or rules match <strong className="text-on-surface">"{query}"</strong>.
+                    </p>
                   </div>
-                </SectionCard>
+                )}
 
-                <SectionCard
-                  id="core-concepts"
-                  accent="bg-sky-500"
-                  title="Core Concepts"
-                  count={CONCEPTS.length}
-                  countLabel="terms"
-                >
-                  <dl className="grid gap-3 sm:grid-cols-2">
-                    {CONCEPTS.map((item) => (
-                      <div
-                        key={item.term}
-                        className="rounded-2xl border border-border bg-surface-container-lowest/95 p-4"
-                      >
-                        <dt className="text-sm font-semibold text-on-surface">{item.term}</dt>
-                        <dd className="mt-1.5 text-xs leading-5 text-on-surface-variant">{item.definition}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </SectionCard>
+                {visibility['record-types'] && (
+                  <SectionCard
+                    id="record-types"
+                    accent="bg-violet-500"
+                    title="Record Types"
+                    count={filteredRecordTypes.length}
+                    countLabel="types"
+                  >
+                    <div className="space-y-4">
+                      {filteredRecordTypes.map((record) => (
+                        <article
+                          key={record.type}
+                          className="api-docs-card overflow-hidden rounded-[24px] border border-border bg-surface-container-lowest/95"
+                        >
+                          <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
+                            <code className="rounded-lg bg-primary/10 px-2.5 py-1 text-sm font-bold text-primary">
+                              {record.type}
+                            </code>
+                            <span className="text-sm font-semibold text-on-surface">{record.title}</span>
+                            <span className="ml-auto rounded-md bg-surface-container px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
+                              {record.rfc}
+                            </span>
+                          </div>
+                          <div className="space-y-3 px-5 py-4">
+                            <div>
+                              <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                                What it does
+                              </span>
+                              <p className="mt-1 text-sm leading-6 text-on-surface">{record.what}</p>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                                How it works
+                              </span>
+                              <p className="mt-1 text-sm leading-6 text-on-surface-variant">{record.how}</p>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                                Example
+                              </span>
+                              <pre className="mt-1 overflow-x-auto rounded-xl border border-border bg-surface-container-lowest px-4 py-2.5 text-xs leading-6">
+                                <code className="font-mono text-on-surface">{record.example}</code>
+                              </pre>
+                            </div>
+                            {record.fields && (
+                              <div>
+                                <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                                  Fields (in order)
+                                </span>
+                                <dl className="mt-1 divide-y divide-border rounded-xl border border-border bg-surface-container-lowest">
+                                  {record.fields.map((field) => (
+                                    <div
+                                      key={field.name}
+                                      className="grid gap-1 px-4 py-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-3"
+                                    >
+                                      <dt className="flex flex-col gap-0.5">
+                                        <code className="font-mono text-xs font-bold text-primary">{field.name}</code>
+                                        <code className="font-mono text-[11px] text-on-surface-variant">{field.sample}</code>
+                                      </dt>
+                                      <dd className="text-xs leading-5 text-on-surface-variant">{field.description}</dd>
+                                    </div>
+                                  ))}
+                                </dl>
+                              </div>
+                            )}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </SectionCard>
+                )}
 
-                <SectionCard
-                  id="dnssec"
-                  accent="bg-fuchsia-500"
-                  title="DNSSEC Terms"
-                  count={DNSSEC_TERMS.length}
-                  countLabel="terms"
-                >
-                  <dl className="grid gap-3 sm:grid-cols-2">
-                    {DNSSEC_TERMS.map((item) => (
-                      <div
-                        key={item.term}
-                        className="rounded-2xl border border-border bg-surface-container-lowest/95 p-4"
-                      >
-                        <dt className="text-sm font-semibold text-on-surface">{item.term}</dt>
-                        <dd className="mt-1.5 text-xs leading-5 text-on-surface-variant">{item.definition}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </SectionCard>
+                {visibility['email-auth'] && (
+                  <SectionCard
+                    id="email-auth"
+                    accent="bg-rose-500"
+                    title="Email Authentication"
+                    count={filteredEmailAuth.length}
+                    countLabel="records"
+                  >
+                    <p className="mb-4 text-sm leading-6 text-on-surface-variant">
+                      These are not separate DNS record types — they are TXT records at well-known names, with
+                      type-specific value formats. Each closes a different gap in vanilla SMTP security.
+                    </p>
+                    <div className="space-y-4">
+                      {filteredEmailAuth.map((entry) => (
+                        <article
+                          key={entry.name}
+                          className="api-docs-card overflow-hidden rounded-[24px] border border-border bg-surface-container-lowest/95"
+                        >
+                          <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
+                            <code className="rounded-lg bg-rose-500/10 px-2.5 py-1 text-sm font-bold text-rose-700">
+                              {entry.name}
+                            </code>
+                            <span className="text-sm font-semibold text-on-surface">{entry.fullName}</span>
+                            <span className="ml-auto rounded-md bg-surface-container px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
+                              {entry.rfc}
+                            </span>
+                          </div>
+                          <div className="space-y-3 px-5 py-4">
+                            <div>
+                              <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                                Owner name
+                              </span>
+                              <code className="mt-1 block font-mono text-xs text-on-surface">{entry.owner}</code>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                                What it does
+                              </span>
+                              <p className="mt-1 text-sm leading-6 text-on-surface">{entry.what}</p>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                                How it works
+                              </span>
+                              <p className="mt-1 text-sm leading-6 text-on-surface-variant">{entry.how}</p>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                                Example
+                              </span>
+                              <pre className="mt-1 overflow-x-auto rounded-xl border border-border bg-surface-container-lowest px-4 py-2.5 text-xs leading-6">
+                                <code className="font-mono text-on-surface">{entry.example}</code>
+                              </pre>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </SectionCard>
+                )}
 
-                <SectionCard
-                  id="rfc-compliance"
-                  accent="bg-indigo-500"
-                  title="RFC Compliance"
-                  count={rfcCount}
-                  countLabel="rules enforced"
-                >
-                  <p className="mb-5 max-w-3xl text-sm leading-6 text-on-surface-variant">
-                    These are the DNS protocol rules the frontend validates before sending data to the backend.
-                  </p>
-                  <div className="space-y-5">
-                    {RFC_COMPLIANCE.map((group) => (
-                      <div
-                        key={group.category}
-                        className="api-docs-card overflow-hidden rounded-[24px] border border-border bg-surface-container-lowest/95"
-                      >
-                        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-                          <h3 className="text-sm font-semibold text-on-surface">{group.category}</h3>
-                          <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
-                            {group.rules.length} {group.rules.length === 1 ? 'rule' : 'rules'}
-                          </span>
+                {visibility['core-concepts'] && (
+                  <SectionCard
+                    id="core-concepts"
+                    accent="bg-sky-500"
+                    title="Core Concepts"
+                    count={filteredConcepts.length}
+                    countLabel="terms"
+                  >
+                    <dl className="grid gap-3 sm:grid-cols-2">
+                      {filteredConcepts.map((item) => (
+                        <div
+                          key={item.term}
+                          className="rounded-2xl border border-border bg-surface-container-lowest/95 p-4"
+                        >
+                          <dt className="text-sm font-semibold text-on-surface">{item.term}</dt>
+                          <dd className="mt-1.5 text-xs leading-5 text-on-surface-variant">{item.definition}</dd>
                         </div>
-                        <ul className="divide-y divide-border">
-                          {group.rules.map((entry) => (
-                            <li
-                              key={entry.rule}
-                              className="flex flex-col gap-2 px-5 py-4 lg:flex-row lg:items-start lg:gap-4"
-                            >
-                              <code className="shrink-0 rounded-md bg-surface-container px-2 py-1 text-[11px] font-semibold text-primary lg:w-44">
-                                {entry.rfc}
-                              </code>
-                              <p className="text-sm leading-6 text-on-surface">{entry.rule}</p>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
+                      ))}
+                    </dl>
+                  </SectionCard>
+                )}
+
+                {visibility['dnssec'] && (
+                  <SectionCard
+                    id="dnssec"
+                    accent="bg-fuchsia-500"
+                    title="DNSSEC Terms"
+                    count={filteredDnssec.length}
+                    countLabel="terms"
+                  >
+                    <dl className="grid gap-3 sm:grid-cols-2">
+                      {filteredDnssec.map((item) => (
+                        <div
+                          key={item.term}
+                          className="rounded-2xl border border-border bg-surface-container-lowest/95 p-4"
+                        >
+                          <dt className="text-sm font-semibold text-on-surface">{item.term}</dt>
+                          <dd className="mt-1.5 text-xs leading-5 text-on-surface-variant">{item.definition}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </SectionCard>
+                )}
+
+                {visibility['rfc-compliance'] && (
+                  <SectionCard
+                    id="rfc-compliance"
+                    accent="bg-indigo-500"
+                    title="RFC Compliance"
+                    count={rfcCount}
+                    countLabel="rules enforced"
+                  >
+                    <p className="mb-5 max-w-3xl text-sm leading-6 text-on-surface-variant">
+                      These are the DNS protocol rules the frontend validates before sending data to the backend.
+                    </p>
+                    <div className="space-y-5">
+                      {filteredRfc.map((group) => (
+                        <div
+                          key={group.category}
+                          className="api-docs-card overflow-hidden rounded-[24px] border border-border bg-surface-container-lowest/95"
+                        >
+                          <div className="flex items-center justify-between border-b border-border px-5 py-3">
+                            <h3 className="text-sm font-semibold text-on-surface">{group.category}</h3>
+                            <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                              {group.rules.length} {group.rules.length === 1 ? 'rule' : 'rules'}
+                            </span>
+                          </div>
+                          <ul className="divide-y divide-border">
+                            {group.rules.map((entry) => (
+                              <li
+                                key={entry.rule}
+                                className="flex flex-col gap-2 px-5 py-4 lg:flex-row lg:items-start lg:gap-4"
+                              >
+                                <code className="shrink-0 rounded-md bg-surface-container px-2 py-1 text-[11px] font-semibold text-primary lg:w-44">
+                                  {entry.rfc}
+                                </code>
+                                <p className="text-sm leading-6 text-on-surface">{entry.rule}</p>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </SectionCard>
+                )}
               </div>
             </div>
           </section>

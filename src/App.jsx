@@ -6,6 +6,7 @@ import { ApiDocs } from './pages/ApiDocs'
 import { DnsReference } from './pages/DnsReference'
 import {
   EditRecordModal,
+  EditSoaModal,
   RecordDetailsModal,
   SmartRuleDetailsModal,
   CreateZoneModal,
@@ -31,6 +32,7 @@ function AppContent() {
       </Routes>
 
       <EditRecordModal />
+      <EditSoaModal />
       <RecordDetailsModal />
       <SmartRuleDetailsModal />
       <CreateZoneModal />
