@@ -90,13 +90,21 @@ function validateRecordValue(type, value) {
     case 'MX': {
       const match = trimmed.match(/^(\d+)\s+(\S.*)$/)
       if (!match) {
-        return 'MX records must be "<preference> <hostname>", e.g. "10 mail.example.com".'
+        return 'MX records must be "<preference> <hostname>", e.g. "10 mail.example.com". Use "0 ." for Null MX (RFC 7505).'
       }
       const pref = Number(match[1])
       if (!Number.isInteger(pref) || pref < 0 || pref > 65535) {
         return 'MX preference must be a whole number between 0 and 65535 (RFC 1035 §3.3.9).'
       }
       const target = match[2].trim()
+      // Null MX (RFC 7505): "0 ." advertises that the domain does not accept mail.
+      const isNullTarget = target === '.' || target === ''
+      if (isNullTarget) {
+        if (pref !== 0) {
+          return 'Null MX records (target ".") must have preference 0 (RFC 7505).'
+        }
+        return ''
+      }
       if (target.startsWith('*.')) {
         return 'MX target cannot be a wildcard pattern.'
       }
@@ -250,7 +258,7 @@ function getRecordValueConfig(type) {
       return {
         label: 'Mail Exchanger',
         placeholder: '10 mail.example.com',
-        helperText: 'Format: "<preference> <hostname>". Lower preference is preferred. One entry per line or comma-separated. Trailing dot is optional.',
+        helperText: 'Format: "<preference> <hostname>". Lower preference is preferred (RFC 5321 §5.1). Multiple entries allowed, one per line or comma-separated. Use "0 ." for Null MX (RFC 7505) to declare the domain accepts no mail — must be the only entry.',
         rows: 3,
       }
     case 'PTR':
@@ -342,7 +350,10 @@ export function EditRecordModal() {
     if (cnameKeys.size === 0) return ''
     for (const target of targets) {
       const host = extractHostTarget(recordType, target)
-      const ascii = toAsciiDomain(trimTrailingDot(host))
+      const cleanHost = trimTrailingDot(String(host).trim())
+      // Skip Null MX (RFC 7505): target is "." — not a real hostname to cross-check.
+      if (recordType === 'MX' && cleanHost === '') continue
+      const ascii = toAsciiDomain(cleanHost)
       const subdomain = getSubdomainFromRecordName(ascii, zone)
       if (cnameKeys.has(normalizeRecordNameKey(subdomain))) {
         return `${recordType} target "${target}" points to a name that already has a CNAME — RFC 2181 §10.3 forbids this.`
@@ -377,6 +388,18 @@ export function EditRecordModal() {
 
       if (form.type === 'ALIAS' && values.length > 1) {
         throw new Error('ALIAS records can only have a single target.')
+      }
+
+      if (form.type === 'MX' && values.length > 1) {
+        const hasNullMx = values.some((v) => {
+          const m = String(v).trim().match(/^(\d+)\s+(\S.*)$/)
+          if (!m) return false
+          const target = m[2].trim()
+          return Number(m[1]) === 0 && (target === '.' || target === '')
+        })
+        if (hasNullMx) {
+          throw new Error('Null MX (RFC 7505) cannot coexist with other MX records — it explicitly declares the domain accepts no mail.')
+        }
       }
 
       const dedupKeys = values.map((v) => String(v).trim().replace(/\.$/, '').toLowerCase())

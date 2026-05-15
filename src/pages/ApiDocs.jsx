@@ -130,7 +130,7 @@ const API_SECTIONS = [
         method: 'POST',
         path: '/addRecord',
         summary: 'Add a single value to an RRset. Creates the zone if needed. The frontend exposes A, AAAA, CNAME, ALIAS, MX, NS, PTR, and TXT; SOA is managed by the system. ALIAS is a vendor extension (not in any DNS RFC) — the server resolves the target and returns its A/AAAA values on the wire, which makes it safe at the zone apex where CNAME is forbidden. The frontend-side subdomain field accepts plain labels (e.g. "www") and strips the zone suffix on submit, so passing "www.example.com" for zone "example.com" still resolves to subdomain "www".',
-        params: 'subdomain uses "@" or "" for apex. record_type: A, AAAA, CNAME, ALIAS, MX, NS, PTR, TXT (SOA is system-managed). MX values are "<preference> <hostname>".',
+        params: 'subdomain uses "@" or "" for apex. record_type: A, AAAA, CNAME, ALIAS, MX, NS, PTR, TXT (SOA is system-managed). MX values are "<preference> <hostname>"; "0 ." is the Null MX form (RFC 7505) and must be the only MX value at its name.',
         body: '{ "zone": "example.com", "subdomain": "www", "record_type": "A", "value": "1.2.3.4", "ttl": 60 }',
         responses: [
           { status: 200, body: 'Record added successfully' },

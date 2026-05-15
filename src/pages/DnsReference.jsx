@@ -38,10 +38,10 @@ const RECORD_TYPES = [
   {
     type: 'MX',
     title: 'Mail exchanger',
-    what: 'Declares the mail servers that accept email for a domain, each with a preference value.',
-    how: 'Sending mail servers sort MX records by preference (lowest first) and try them in order. The exchange must be a hostname with A/AAAA records — never an IP, never a CNAME.',
-    example: 'example.com.  3600  IN  MX  10 mail.example.com.',
-    rfc: 'RFC 1035 §3.3.9',
+    what: 'Declares the mail servers that accept email for a domain, each with a preference value. A special "Null MX" form (preference 0, target ".") declares that the domain accepts NO mail.',
+    how: 'Sending mail servers sort MX records by preference (lowest first per RFC 5321 §5.1) and try them in order. The exchange must be a hostname with A/AAAA records — never an IP, never a CNAME (RFC 2181 §10.3). Null MX (RFC 7505) — "0 ." — must be the only MX value at a name; it tells senders to bounce mail rather than retry.',
+    example: 'example.com.  3600  IN  MX  10 mail.example.com.\n# Null MX (no mail accepted):\nexample.com.  3600  IN  MX  0 .',
+    rfc: 'RFC 1035 §3.3.9 / RFC 7505',
   },
   {
     type: 'NS',
@@ -251,6 +251,8 @@ const RFC_COMPLIANCE = [
       { rfc: 'RFC 1035 §3.3.14', rule: 'TXT strings are limited to 255 characters each; quotes must be balanced. Long values must be split into multiple strings.' },
       { rfc: 'RFC 1035 §3.3.11', rule: 'NS RDATA must be a hostname, not an IP address.' },
       { rfc: 'RFC 1035 §3.3.9', rule: 'MX records must be "<preference> <hostname>". Preference is a 16-bit unsigned integer (0-65535); the exchange must be a hostname.' },
+      { rfc: 'RFC 7505', rule: 'Null MX — "0 ." — declares the domain accepts no mail. Preference must be exactly 0 and the Null MX must be the only MX value at its name.' },
+      { rfc: 'RFC 5321 §5.1', rule: 'MX preference defines sender try-order (lowest first). Multiple MX records at the same name are common and allowed; senders pick the lowest-preference reachable host.' },
       { rfc: 'RFC 1035 §3.3.12', rule: 'PTR records point to a single valid hostname (not an IP, not a wildcard).' },
       { rfc: 'RFC 4592', rule: 'CNAME, ALIAS, NS, MX, and PTR targets cannot be wildcard patterns — wildcards are owner-name semantics only.' },
       { rfc: 'RFC 2181 §10.3', rule: 'NS and MX targets cannot point to a name that already has a CNAME record (same-zone check at validation time).' },

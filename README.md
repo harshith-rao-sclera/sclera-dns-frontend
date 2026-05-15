@@ -116,6 +116,8 @@ The browser validates this before any data is sent to the backend. The same list
 - **RFC 1035 §3.3.14** — TXT strings are limited to 255 chars each; quotes must be balanced; long values must be split into multiple strings.
 - **RFC 1035 §3.3.11** — NS RDATA must be a hostname, not an IP address.
 - **RFC 1035 §3.3.9** — MX records are `<preference> <hostname>`; preference is 0-65535 and the exchange must be a hostname (not an IP, not a wildcard).
+- **RFC 7505** — Null MX (`0 .`) declares the domain accepts no mail; preference must be exactly 0 and it must be the only MX value at its name.
+- **RFC 5321 §5.1** — multi-value MX RRsets are common and allowed; sender behavior is to try lowest preference first.
 - **RFC 1035 §3.3.12** — PTR records point to a single valid hostname.
 - **RFC 4592** — CNAME, ALIAS, NS, MX, and PTR targets cannot be wildcard patterns (wildcards are owner-name semantics only).
 - **RFC 2181 §10.3** — NS and MX targets cannot point to a name that already has a CNAME record (same-zone check at validation time).
