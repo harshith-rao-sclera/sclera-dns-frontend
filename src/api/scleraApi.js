@@ -193,14 +193,21 @@ export async function getHealth() {
   })
 }
 
-export async function createZone(zone, nameservers = []) {
+export async function createZone(zone, nameservers = [], nsTtl) {
+  const data = {
+    zone: normalizeZoneName(zone),
+    nameservers: normalizeNameserverEntries(nameservers),
+  }
+  if (nsTtl !== undefined && nsTtl !== null && String(nsTtl).trim() !== '') {
+    const parsed = Number(nsTtl)
+    if (Number.isFinite(parsed)) {
+      data.ns_ttl = parsed
+    }
+  }
   return request({
     method: 'POST',
     url: '/createZone',
-    data: {
-      zone: normalizeZoneName(zone),
-      nameservers: normalizeNameserverEntries(nameservers),
-    },
+    data,
   })
 }
 

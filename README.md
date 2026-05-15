@@ -45,7 +45,7 @@ src/
   components/
     Common/                Button, Modal, Table, TextField/TextArea, Select, Alert, Badge, CopyButton, CodeBlock…
     Layout/                MainLayout, TopBar, Sidebar
-    Modals/                EditRecord, RecordDetails, CreateZone, DeleteConfirmation, Smart IP modals
+    Modals/                EditRecord, EditSoa, RecordDetails, CreateZone, DeleteConfirmation, Smart IP modals
     Zone/                  DnssecSection (collapsible DNSSEC panel for the zone detail page)
   context/                 Modal, Feedback, Theme providers
   hooks/                   useModal, useFeedback, useTheme
@@ -151,7 +151,7 @@ The frontend talks to ScleraDNS over JSON/HTTP. Whether a true authoritative DNS
 ## Notable client behavior
 
 - **Helper text minimization** — the Record Name field stays clean by default; hints appear only when relevant (input ends with the zone, or the input contains non-ASCII characters and a punycode preview is needed).
-- **Per-row record actions** — each RRset row in the Zone Records table shows Edit + Delete, with locked icons and explanatory tooltips for SOA, apex NS, and internal-zone records.
+- **Per-row record actions** — each RRset row in the Zone Records table shows Edit + Delete. Locked icons replace the action when it isn't permitted, with explanatory tooltips: apex NS rows allow edit but lock delete (zone must keep nameservers); SOA rows allow edit (opens a structured modal) but lock delete; everything in an internal-zone is fully locked.
 - **DNSSEC panel** — the zone detail page has a collapsible DNSSEC section that reads `/getZoneDNSSEC` on load, surfaces DS records (sorted SHA-256 → SHA-384 → SHA-1) with copy buttons, hides raw DNSKEYs behind a "Technical details" disclosure, and gates enable/disable behind confirmation modals. DNSSEC can also be toggled on at zone-creation time.
 - **Record type coverage** — A, AAAA, CNAME, ALIAS, MX, NS, PTR, TXT are creatable from the UI. SOA is editable via a dedicated structured form (MNAME / RNAME / REFRESH / RETRY / EXPIRE / MINIMUM / TTL — full field breakdown documented on the Reference page). Serial is auto-incremented by the backend and never exposed in the UI. SOA records are never deletable.
 - **Email-authentication reference** — `/reference` documents SPF, DKIM, DMARC, BIMI, MTA-STS, and TLSRPT as conventional TXT-record patterns (owner name, format, example, governing RFC).

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { MainLayout } from '../components/Layout/MainLayout'
 import { Badge, CodeBlock, CopyButton, TextField } from '../components/Common'
 import { API_BASE_URL } from '../api/scleraApi'
@@ -41,18 +41,28 @@ const API_SECTIONS = [
       {
         method: 'POST',
         path: '/createZone',
-        summary: 'Create a DNS zone explicitly. In-bailiwick nameservers must include one or more IP addresses, while out-of-bailiwick nameservers must not.',
+        summary: 'Create a DNS zone explicitly. Zone name is normalized to FQDN (trailing dot added). Nameservers array is required (at least one). In-bailiwick nameserver hosts must include glue IPs; out-of-bailiwick hosts must not. ns_ttl (uint32, optional, default 3600) applies to the apex NS RRset and any glue A/AAAA records. JSON decoding is strict — unknown fields are rejected. CreateZone does not touch the SOA; PowerDNS auto-generates it from its template. Use PUT /updateSOA to customize.',
         params: 'None',
         body: `{
-  "zone": "example.com",
+  "zone": "scleraufi.com",
   "nameservers": [
-    { "host": "ns1.example.com", "ips": ["192.0.2.10", "2001:db8::10"] },
-    { "host": "ns2.provider.net" }
-  ]
+    { "host": "ns1.scleraufi.com", "ips": ["192.0.2.10", "2001:db8::10"] },
+    { "host": "ns2.scleraufi.com", "ips": ["192.0.2.11"] }
+  ],
+  "ns_ttl": 3600
 }`,
         responses: [
           { status: 201, body: 'Zone created successfully' },
-          { status: 409, body: 'Zone already exists: example.com' },
+          { status: 400, body: 'zone is required' },
+          { status: 400, body: 'nameservers is required (at least one)' },
+          { status: 400, body: 'Failed to create zone: invalid zone name: ...' },
+          { status: 400, body: 'Failed to create zone: nameserver ns1.scleraufi.com. is in-bailiwick — glue IP(s) are REQUIRED' },
+          { status: 400, body: 'Failed to create zone: nameserver ns1.external.com. is NOT in-bailiwick — glue IPs are forbidden' },
+          { status: 400, body: 'Failed to create zone: TTL N exceeds RFC 2181 maximum of 2147483647 (2^31-1)' },
+          { status: 400, body: 'Invalid JSON: json: unknown field "..."' },
+          { status: 405, body: 'Only POST allowed' },
+          { status: 409, body: 'Failed to create zone: failed to create zone scleraufi.com.: ... Conflict ...' },
+          { status: 500, body: 'Failed to create zone: ...' },
         ],
       },
       {
@@ -327,8 +337,121 @@ function endpointMatches(endpoint, query) {
     .some((f) => typeof f === 'string' && f.toLowerCase().includes(lower))
 }
 
+const QUICK_START = [
+  {
+    icon: 'public',
+    accent: 'bg-sky-500/12 text-sky-600',
+    title: 'Your first zone',
+    description: 'Create a hosted zone, configure nameservers, and set the in-bailiwick glue records.',
+    href: '#zones',
+    cta: 'Get started',
+  },
+  {
+    icon: 'database',
+    accent: 'bg-violet-500/12 text-violet-600',
+    title: 'Add records',
+    description: 'Add A, AAAA, CNAME, MX, TXT, and the rest — each with structured RFC-grade validation.',
+    href: '#records',
+    cta: 'View endpoints',
+  },
+  {
+    icon: 'lock',
+    accent: 'bg-fuchsia-500/12 text-fuchsia-600',
+    title: 'Secure with DNSSEC',
+    description: 'Provision a KSK + ZSK using ECDSA P-256 and surface DS records for the registrar.',
+    href: '#dnssec',
+    cta: 'Read reference',
+  },
+]
+
+function QuickStartCard({ entry }) {
+  return (
+    <a
+      href={entry.href}
+      className="group flex flex-col gap-3 rounded-2xl border border-border bg-surface-container-lowest p-5 transition-all hover:border-primary/40 hover:shadow-lg"
+    >
+      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${entry.accent}`}>
+        <span className="material-symbols-outlined text-[20px]">{entry.icon}</span>
+      </div>
+      <h3 className="text-base font-semibold tracking-tight text-on-surface">{entry.title}</h3>
+      <p className="flex-1 text-sm leading-6 text-on-surface-variant">{entry.description}</p>
+      <span className="inline-flex items-center gap-1 text-sm font-semibold text-primary transition-transform group-hover:translate-x-0.5">
+        {entry.cta}
+        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+      </span>
+    </a>
+  )
+}
+
+function EndpointArticle({ endpoint }) {
+  return (
+    <article className="overflow-hidden rounded-2xl border border-border bg-surface-container-lowest">
+      <div className="flex flex-col gap-3 border-b border-border px-5 py-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <MethodBadge method={endpoint.method} />
+          <code className="text-sm font-semibold text-on-surface">{endpoint.path}</code>
+        </div>
+        <p className="text-sm leading-6 text-on-surface-variant">{endpoint.summary}</p>
+      </div>
+
+      <div className="min-w-0 space-y-5 px-5 py-5">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="min-w-0">
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+              Parameters
+            </div>
+            <div className="rounded-2xl border border-border bg-surface-container-lowest px-4 py-3 text-sm text-on-surface break-words">
+              {endpoint.params}
+            </div>
+          </div>
+
+          {endpoint.body ? (
+            <div className="min-w-0">
+              <CodeBlock label="Request Body" code={endpoint.body} />
+            </div>
+          ) : (
+            <div className="min-w-0">
+              <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                Request Body
+              </div>
+              <div className="rounded-2xl border border-border bg-surface-container-lowest px-4 py-3 text-sm text-on-surface-variant">
+                No request body.
+              </div>
+            </div>
+          )}
+        </div>
+
+        <CodeBlock label="cURL" code={buildCurl(endpoint)} />
+
+        <div>
+          <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+            Responses
+          </div>
+          <div className="space-y-3">
+            {endpoint.responses.map((response, index) => (
+              <div
+                key={`${endpoint.path}-${response.status}-${index}`}
+                className="overflow-hidden rounded-2xl border border-border bg-surface-container-lowest"
+              >
+                <div className="flex items-center justify-between border-b border-border px-4 py-2">
+                  <StatusBadge status={response.status} />
+                  <CopyButton text={response.body} />
+                </div>
+                <pre className="custom-scrollbar overflow-x-auto whitespace-pre-wrap break-words px-4 py-3 text-xs leading-6 text-on-surface">
+                  <code className="font-mono">{response.body}</code>
+                </pre>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </article>
+  )
+}
+
 export function ApiDocs() {
   const [search, setSearch] = useState('')
+  const [activeId, setActiveId] = useState('quick-start')
   const query = search.trim()
 
   const filteredSections = useMemo(
@@ -342,87 +465,58 @@ export function ApiDocs() {
   )
   const totalEndpoints = filteredSections.reduce((sum, s) => sum + s.endpoints.length, 0)
 
+  const sectionIds = useMemo(
+    () => ['quick-start', ...filteredSections.map((s) => s.title.toLowerCase().replace(/\s+/g, '-'))],
+    [filteredSections],
+  )
+
+  useEffect(() => {
+    const elements = sectionIds.map((id) => document.getElementById(id)).filter(Boolean)
+    if (elements.length === 0) return undefined
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        if (visible.length > 0) {
+          setActiveId(visible[0].target.id)
+        }
+      },
+      { rootMargin: '-96px 0px -65% 0px', threshold: 0 },
+    )
+
+    elements.forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
+  }, [sectionIds])
+
   return (
-    <MainLayout breadcrumbs={[{ label: 'API Docs' }]}>
-      <div className="api-docs-page min-h-full">
-        <div className="api-docs-page__layer api-docs-page__layer--light" />
-        <div className="api-docs-page__layer api-docs-page__layer--dark" />
-        <div className="api-docs-page__content">
-        <section className="px-6 pt-8 pb-6">
-          <div className="api-docs-card relative overflow-hidden rounded-[28px] border border-border bg-surface-container-lowest/90 p-8 shadow-[0_20px_80px_color-mix(in_oklab,var(--color-on-surface)_10%,transparent)]">
-            <div className="absolute -right-10 -top-12 h-40 w-40 rounded-full bg-sky-500/12 blur-3xl" />
-            <div className="absolute bottom-0 right-20 h-24 w-24 rounded-full bg-amber-500/12 blur-2xl" />
-            <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-              <div className="max-w-3xl">
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface-container-low px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.28em] text-on-surface-variant">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  ScleraDNS Reference
-                </div>
-                <h1 className="font-serif text-4xl leading-tight text-on-surface md:text-5xl">
-                  HTTP API documentation for every zone, record, rule, and resolver call.
+    <MainLayout breadcrumbs={[{ label: 'Docs', to: '/docs' }, { label: 'API Reference' }]}>
+      <div className="min-h-full bg-surface">
+        <div className="mx-auto w-full max-w-7xl px-6 py-8">
+          <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_240px]">
+            <main className="min-w-0">
+              <header className="mb-10">
+                <h1 className="text-3xl font-bold tracking-tight text-on-surface md:text-4xl">
+                  ScleraDNS HTTP API Reference
                 </h1>
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-on-surface-variant">
-                  A frontend-friendly reference for the ScleraDNS service. All error responses are plain text,
-                  and zone names returned by the backend may include trailing dots.
+                <p className="mt-4 max-w-2xl text-base leading-7 text-on-surface-variant">
+                  Every endpoint for zones, records, Smart IP rules, DNSSEC, and direct DNS resolution.
+                  All error responses are plain text; zone names returned by the backend may include trailing dots.
                 </p>
-                <div className="mt-5 max-w-md">
-                  <TextField
-                    icon="search"
-                    placeholder="Search endpoints (e.g. zone, smart, dnssec)…"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="api-docs-card api-docs-shell grid gap-3 rounded-3xl border border-border px-5 py-4 shadow-lg">
-                <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-on-surface-variant">
-                  Base URL
-                </div>
-                <code className="text-sm text-primary">{API_BASE_URL}</code>
-                <div className="flex items-center gap-2 text-xs text-on-surface-variant">
-                  <span className="material-symbols-outlined text-sm text-amber-400">warning</span>
-                  Errors return plain text for `400`, `404`, `405`, `409`, and `500`.
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+              </header>
 
-        <section className="px-6 pb-10">
-          <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-            <aside className="xl:sticky xl:top-20 xl:self-start">
-              <div className="api-docs-card rounded-[24px] border border-border bg-surface-container-lowest/90 p-5 shadow-[0_12px_48px_color-mix(in_oklab,var(--color-on-surface)_8%,transparent)]">
-                <div className="mb-4 text-[10px] font-bold uppercase tracking-[0.28em] text-on-surface-variant">
-                  Quick Index
-                </div>
-                <div className="space-y-2">
-                  {filteredSections.map((section) => (
-                    <a
-                      key={section.title}
-                      href={`#${section.title.toLowerCase().replace(/\s+/g, '-')}`}
-                      className="flex items-center justify-between rounded-2xl border border-transparent bg-surface-container-low px-3 py-3 text-sm font-medium text-on-surface-variant transition-colors hover:border-border hover:bg-surface-container-lowest hover:text-on-surface"
-                    >
-                      <span>{section.title}</span>
-                      <span className={`h-2.5 w-2.5 rounded-full ${section.accent}`} />
-                    </a>
+              <section id="quick-start" className="mb-12 scroll-mt-24">
+                <h2 className="mb-4 text-xl font-bold tracking-tight text-on-surface">Quick Start Paths</h2>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {QUICK_START.map((entry) => (
+                    <QuickStartCard key={entry.title} entry={entry} />
                   ))}
-                  {filteredSections.length === 0 && (
-                    <p className="text-xs italic text-on-surface-variant">No endpoints match your search.</p>
-                  )}
-                  <a
-                    href="/reference"
-                    className="flex items-center justify-between rounded-2xl border border-transparent bg-surface-container-low px-3 py-3 text-sm font-medium text-on-surface-variant transition-colors hover:border-border hover:bg-surface-container-lowest hover:text-on-surface"
-                  >
-                    <span>DNS Reference &amp; RFCs</span>
-                    <span className="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_outward</span>
-                  </a>
                 </div>
-              </div>
-            </aside>
+              </section>
 
-            <div className="min-w-0 space-y-8">
               {filteredSections.length === 0 && (
-                <div className="api-docs-card rounded-[28px] border border-border bg-surface-container-lowest/90 p-8 text-center">
+                <div className="rounded-2xl border border-border bg-surface-container-lowest p-8 text-center">
                   <p className="text-sm text-on-surface-variant">
                     No endpoints match <strong className="text-on-surface">"{query}"</strong>. Try the {' '}
                     <a href="/reference" className="font-medium text-primary hover:underline">DNS Reference</a> for terminology.
@@ -430,101 +524,129 @@ export function ApiDocs() {
                 </div>
               )}
               {query && totalEndpoints > 0 && (
-                <p className="text-xs text-on-surface-variant">
+                <p className="mb-4 text-xs text-on-surface-variant">
                   Showing {totalEndpoints} endpoint{totalEndpoints === 1 ? '' : 's'} matching "{query}".
                 </p>
               )}
-              {filteredSections.map((section) => (
-                <section
-                  key={section.title}
-                  id={section.title.toLowerCase().replace(/\s+/g, '-')}
-                  className="api-docs-card min-w-0 rounded-[28px] border border-border bg-surface-container-lowest/90 p-6 shadow-[0_16px_60px_color-mix(in_oklab,var(--color-on-surface)_8%,transparent)]"
-                >
-                  <div className="mb-6 flex items-center justify-between gap-4 border-b border-border pb-4">
-                    <div className="flex items-center gap-3">
-                      <span className={`h-3 w-3 rounded-full ${section.accent}`} />
-                      <h2 className="text-2xl font-semibold tracking-tight text-on-surface">
-                        {section.title}
-                      </h2>
+
+              <div className="space-y-12">
+                {filteredSections.map((section) => (
+                  <section
+                    key={section.title}
+                    id={section.title.toLowerCase().replace(/\s+/g, '-')}
+                    className="scroll-mt-24"
+                  >
+                    <div className="mb-5 flex items-center justify-between gap-4 border-b border-border pb-3">
+                      <div className="flex items-center gap-3">
+                        <span className={`h-2.5 w-2.5 rounded-full ${section.accent}`} />
+                        <h2 className="text-2xl font-bold tracking-tight text-on-surface">
+                          {section.title}
+                        </h2>
+                      </div>
+                      <Badge variant="zone">{section.endpoints.length} endpoints</Badge>
                     </div>
-                    <Badge variant="zone">{section.endpoints.length} endpoints</Badge>
-                  </div>
+                    <div className="space-y-5">
+                      {section.endpoints.map((endpoint) => (
+                        <EndpointArticle
+                          key={`${endpoint.method}-${endpoint.path}`}
+                          endpoint={endpoint}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </main>
 
-                  <div className="space-y-5">
-                    {section.endpoints.map((endpoint) => (
-                      <article
-                        key={`${endpoint.method}-${endpoint.path}`}
-                        className="api-docs-card overflow-hidden rounded-[24px] border border-border bg-surface-container-lowest/95"
+            <aside className="hidden xl:block">
+              <div className="sticky top-20 space-y-6 self-start">
+                <TextField
+                  icon="search"
+                  placeholder="Search endpoints…"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+
+                <div>
+                  <div className="mb-3 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                    <span>On This Page</span>
+                    {query && (
+                      <button
+                        type="button"
+                        onClick={() => setSearch('')}
+                        className="font-medium normal-case tracking-normal text-primary hover:underline"
                       >
-                        <div className="flex flex-col gap-4 border-b border-border px-5 py-5 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-3">
-                              <MethodBadge method={endpoint.method} />
-                              <code className="text-sm font-semibold text-on-surface">{endpoint.path}</code>
-                            </div>
-                            <p className="mt-3 text-sm leading-6 text-on-surface-variant">{endpoint.summary}</p>
-                          </div>
-                        </div>
-
-                        <div className="min-w-0 space-y-5 px-5 py-5">
-                          <div className="grid gap-4 lg:grid-cols-2">
-                            <div className="min-w-0">
-                              <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
-                                Parameters
-                              </div>
-                              <div className="api-docs-surface h-[calc(100%-1.75rem)] rounded-2xl border border-border bg-surface-container-lowest px-4 py-3 text-sm text-on-surface break-words">
-                                {endpoint.params}
-                              </div>
-                            </div>
-
-                            {endpoint.body ? (
-                              <div className="min-w-0">
-                                <CodeBlock label="Request Body" code={endpoint.body} />
-                              </div>
-                            ) : (
-                              <div className="min-w-0">
-                                <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
-                                  Request Body
-                                </div>
-                                <div className="api-docs-surface h-[calc(100%-1.75rem)] rounded-2xl border border-border bg-surface-container-lowest px-4 py-3 text-sm text-on-surface-variant">
-                                  No request body.
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          <CodeBlock label="cURL" code={buildCurl(endpoint)} />
-
-                          <div>
-                            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
-                              Responses
-                            </div>
-                            <div className="space-y-3">
-                              {endpoint.responses.map((response, index) => (
-                                <div
-                                  key={`${endpoint.path}-${response.status}-${index}`}
-                                  className="overflow-hidden rounded-2xl border border-border bg-surface-container-lowest"
-                                >
-                                  <div className="flex items-center justify-between border-b border-border px-4 py-2">
-                                    <StatusBadge status={response.status} />
-                                    <CopyButton text={response.body} />
-                                  </div>
-                                  <pre className="custom-scrollbar overflow-x-auto whitespace-pre-wrap break-words px-4 py-3 text-xs leading-6 text-on-surface">
-                                    <code className="font-mono">{response.body}</code>
-                                  </pre>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
+                        clear
+                      </button>
+                    )}
                   </div>
-                </section>
-              ))}
-            </div>
+                  <ul className="space-y-1 border-l border-border">
+                    {[
+                      { id: 'quick-start', label: 'Quick Start Paths' },
+                      ...filteredSections.map((s) => ({
+                        id: s.title.toLowerCase().replace(/\s+/g, '-'),
+                        label: s.title,
+                      })),
+                    ].map((item) => {
+                      const isActive = activeId === item.id
+                      return (
+                        <li key={item.id}>
+                          <a
+                            href={`#${item.id}`}
+                            className={`block -ml-px border-l-2 py-1.5 pl-3 text-sm transition-colors ${
+                              isActive
+                                ? 'border-primary font-semibold text-primary'
+                                : 'border-transparent text-on-surface-variant hover:border-outline-variant hover:text-on-surface'
+                            }`}
+                          >
+                            {item.label}
+                          </a>
+                        </li>
+                      )
+                    })}
+                    {filteredSections.length === 0 && (
+                      <li className="pl-3 py-1.5 text-xs italic text-on-surface-variant">No matches.</li>
+                    )}
+                  </ul>
+                </div>
+
+                <div>
+                  <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                    Need Help?
+                  </div>
+                  <ul className="space-y-2">
+                    <li>
+                      <a
+                        href="/reference"
+                        className="flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">menu_book</span>
+                        DNS Reference
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="/rules"
+                        className="flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">rule</span>
+                        Smart IP Rules
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="/"
+                        className="flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">language</span>
+                        Hosted Zones
+                      </a>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </aside>
           </div>
-        </section>
         </div>
       </div>
     </MainLayout>

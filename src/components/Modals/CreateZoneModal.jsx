@@ -3,9 +3,17 @@ import { Button, Modal, TextField, Alert } from '../Common'
 import { useModal } from '../../hooks/useModal'
 import {
   createZone, isInternalSystemZone, validateZoneName, toAsciiDomain, hasNonAscii,
-  isIpAddress, secureZone,
+  isIpAddress, secureZone, validateTtl,
 } from '../../api/scleraApi'
 import { useFeedback } from '../../hooks/useFeedback'
+
+const TTL_PRESETS = [
+  { label: '1m', value: 60 },
+  { label: '5m', value: 300 },
+  { label: '1h', value: 3600 },
+  { label: '6h', value: 21600 },
+  { label: '1d', value: 86400 },
+]
 
 function makeNameserver() {
   return { host: '', ipsRaw: '' }
@@ -67,6 +75,8 @@ export function CreateZoneModal() {
   const [zoneError, setZoneError] = useState('')
   const [nameservers, setNameservers] = useState([])
   const [nsErrors, setNsErrors] = useState([])
+  const [nsTtl, setNsTtl] = useState('3600')
+  const [nsTtlError, setNsTtlError] = useState('')
   const [enableDnssec, setEnableDnssec] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -76,6 +86,8 @@ export function CreateZoneModal() {
       setZone(modal.data?.zone ?? '')
       setNameservers([])
       setNsErrors([])
+      setNsTtl('3600')
+      setNsTtlError('')
       setEnableDnssec(false)
       setZoneError('')
       setError('')
@@ -97,24 +109,41 @@ export function CreateZoneModal() {
         throw new Error('This zone name is reserved for internal system use.')
       }
       const z = validateZoneName(zone)
+      const filledNameservers = nameservers.filter((entry) => entry.host.trim())
+      if (filledNameservers.length === 0) {
+        throw new Error('At least one nameserver is required.')
+      }
       const ns = nameservers.map((entry) => validateNameserver(entry, asciiZone))
+
+      const seenHosts = new Map()
+      nameservers.forEach((entry, index) => {
+        if (ns[index]) return
+        const key = toAsciiDomain(entry.host.trim()).replace(/\.$/, '').toLowerCase()
+        if (!key) return
+        if (seenHosts.has(key)) {
+          ns[index] = `Duplicate nameserver host — "${entry.host.trim()}" is already listed above.`
+        } else {
+          seenHosts.set(key, index)
+        }
+      })
+
+      const ttlErr = validateTtl(nsTtl)
       setZoneError(z)
       setNsErrors(ns)
+      setNsTtlError(ttlErr)
       const firstNsError = ns.find(Boolean) || ''
-      if (z || firstNsError) {
-        throw new Error(z || firstNsError)
+      if (z || firstNsError || ttlErr) {
+        throw new Error(z || firstNsError || ttlErr)
       }
 
-      const nameserverPayload = nameservers
-        .filter((entry) => entry.host.trim())
-        .map((entry) => {
-          const host = toAsciiDomain(entry.host.trim())
-          const inBailiwick = bailiwickOf(entry.host, asciiZone) === 'in'
-          const ips = inBailiwick ? parseIps(entry.ipsRaw) : []
-          return ips.length > 0 ? { host, ips } : { host }
-        })
+      const nameserverPayload = filledNameservers.map((entry) => {
+        const host = toAsciiDomain(entry.host.trim())
+        const inBailiwick = bailiwickOf(entry.host, asciiZone) === 'in'
+        const ips = inBailiwick ? parseIps(entry.ipsRaw) : []
+        return ips.length > 0 ? { host, ips } : { host }
+      })
 
-      const message = await createZone(zone, nameserverPayload)
+      const message = await createZone(zone, nameserverPayload, nsTtl)
       showSuccess(typeof message === 'string' ? message : 'Zone created successfully', 'Zone created')
 
       if (enableDnssec) {
@@ -133,6 +162,7 @@ export function CreateZoneModal() {
       modal.close()
       setZone('')
       setNameservers([])
+      setNsTtl('3600')
       setEnableDnssec(false)
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : 'Unable to create zone.'
@@ -158,7 +188,7 @@ export function CreateZoneModal() {
       onClose={modal.close}
       title="Create Hosted Zone"
       subtitle="Configure a new DNS container for your domain records."
-      size="lg"
+      size="xl"
       footer={(
         <>
           <Button type="button" onClick={modal.close} variant="ghost" className="px-6">
@@ -167,7 +197,7 @@ export function CreateZoneModal() {
           <Button
             type="submit"
             form={formId}
-            disabled={loading || !zone.trim()}
+            disabled={loading || !zone.trim() || nameservers.filter((entry) => entry.host.trim()).length === 0}
             className="min-w-[144px]"
           >
             {loading ? 'Creating...' : 'Create Zone'}
@@ -277,7 +307,7 @@ export function CreateZoneModal() {
 
           {nameservers.length === 0 ? (
             <p className="text-xs text-on-surface-variant">
-              Optional — leave empty to use server defaults. The bailiwick of each host is detected from the zone name.
+              At least one nameserver is required. The bailiwick of each host is detected from the zone name.
             </p>
           ) : (
             <div className="space-y-3">
@@ -359,6 +389,49 @@ export function CreateZoneModal() {
               })}
             </div>
           )}
+
+          <div className="pt-2">
+            <label className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide block mb-1.5">
+              NS Record TTL (seconds)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={nsTtl}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setNsTtl(value)
+                  setNsTtlError(validateTtl(value))
+                }}
+                className={`w-24 bg-surface-container-lowest border ${
+                  nsTtlError ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/40'
+                } focus:border-primary focus:ring-2 focus:ring-primary/15 h-9 px-3 text-sm rounded outline-none transition-all`}
+              />
+              <div className="flex flex-wrap gap-1">
+                {TTL_PRESETS.map((preset) => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    onClick={() => {
+                      setNsTtl(String(preset.value))
+                      setNsTtlError('')
+                    }}
+                    className={`px-2.5 py-1.5 text-xs font-medium rounded transition-colors ${
+                      String(preset.value) === nsTtl
+                        ? 'bg-primary text-on-primary'
+                        : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {nsTtlError && <p className="text-xs text-error mt-1.5">{nsTtlError}</p>}
+            <p className="text-xs text-on-surface-variant mt-1.5">
+              Applied to both the apex NS RRset and any glue A/AAAA records. Defaults to 3600. Max 2147483647 (RFC 2181).
+            </p>
+          </div>
         </section>
       </form>
     </Modal>

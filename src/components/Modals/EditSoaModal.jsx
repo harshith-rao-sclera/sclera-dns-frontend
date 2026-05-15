@@ -159,7 +159,7 @@ export function EditSoaModal() {
       onClose={modal.close}
       title={`Edit SOA: ${zoneName}`}
       subtitle="Start of Authority — zone-level metadata and refresh timers."
-      size="lg"
+      size="xl"
       footer={(
         <>
           <button
@@ -177,7 +177,7 @@ export function EditSoaModal() {
     >
       <form
         id={formId}
-        className="space-y-5"
+        className="space-y-7"
         onSubmit={(event) => {
           event.preventDefault()
           handleSubmit()
@@ -186,10 +186,10 @@ export function EditSoaModal() {
         {error && <Alert title="Unable to save SOA">{error}</Alert>}
 
         <div>
-          <h4 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+          <h4 className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
             Authority
           </h4>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-5">
             <TextField
               label="MNAME — Primary nameserver"
               placeholder="ns1.example.com"
@@ -212,10 +212,10 @@ export function EditSoaModal() {
         </div>
 
         <div>
-          <h4 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+          <h4 className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
             Timers (RFC 1912 §2.2 / RFC 2308)
           </h4>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-5">
             <TextField
               type="number"
               label="REFRESH (seconds)"
@@ -224,7 +224,7 @@ export function EditSoaModal() {
               onChange={(event) => set('refresh', event.target.value)}
               error={!!fieldErrors.refresh}
               errorMessage={fieldErrors.refresh}
-              helperText={SOA_BOUNDS.refresh.label}
+              helperText={`How often secondaries should re-poll the primary. Valid range: ${SOA_BOUNDS.refresh.label}.`}
             />
             <TextField
               type="number"
@@ -234,7 +234,7 @@ export function EditSoaModal() {
               onChange={(event) => set('retry', event.target.value)}
               error={!!fieldErrors.retry}
               errorMessage={fieldErrors.retry}
-              helperText={`${SOA_BOUNDS.retry.label} · must be < refresh`}
+              helperText={`How long to wait before retrying after a failed refresh. Valid range: ${SOA_BOUNDS.retry.label}. Must be strictly less than REFRESH.`}
             />
             <TextField
               type="number"
@@ -244,7 +244,7 @@ export function EditSoaModal() {
               onChange={(event) => set('expire', event.target.value)}
               error={!!fieldErrors.expire}
               errorMessage={fieldErrors.expire}
-              helperText={SOA_BOUNDS.expire.label}
+              helperText={`After this long without reaching the primary, secondaries stop serving the zone. Valid range: ${SOA_BOUNDS.expire.label}.`}
             />
             <TextField
               type="number"
@@ -254,13 +254,13 @@ export function EditSoaModal() {
               onChange={(event) => set('minimum', event.target.value)}
               error={!!fieldErrors.minimum}
               errorMessage={fieldErrors.minimum}
-              helperText={SOA_BOUNDS.minimum.label}
+              helperText={`TTL for negative responses (NXDOMAIN / no-data) per RFC 2308. Valid range: ${SOA_BOUNDS.minimum.label}.`}
             />
           </div>
         </div>
 
         <div>
-          <h4 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+          <h4 className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
             Record TTL
           </h4>
           <TextField

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { MainLayout } from '../components/Layout/MainLayout'
 import { Badge, TextField } from '../components/Common'
 
@@ -277,6 +277,52 @@ const INDEX = [
   { id: 'rfc-compliance', label: 'RFC Compliance', accent: 'bg-indigo-500' },
 ]
 
+const QUICK_START = [
+  {
+    icon: 'category',
+    accent: 'bg-violet-500/12 text-violet-600',
+    title: 'Record Types',
+    description: 'A, AAAA, CNAME, ALIAS, MX, NS, PTR, TXT, and SOA — what each one does, how it works, and a working example.',
+    href: '#record-types',
+    cta: 'Browse types',
+  },
+  {
+    icon: 'mail',
+    accent: 'bg-rose-500/12 text-rose-600',
+    title: 'Email Authentication',
+    description: 'SPF, DKIM, DMARC, BIMI, MTA-STS, and TLSRPT — how the TXT-record patterns at well-known names secure mail.',
+    href: '#email-auth',
+    cta: 'View patterns',
+  },
+  {
+    icon: 'lock',
+    accent: 'bg-fuchsia-500/12 text-fuchsia-600',
+    title: 'DNSSEC Terms',
+    description: 'KSK, ZSK, DS records, RRSIG, chain of trust — the vocabulary you need to read or operate a signed zone.',
+    href: '#dnssec',
+    cta: 'Read glossary',
+  },
+]
+
+function QuickStartCard({ entry }) {
+  return (
+    <a
+      href={entry.href}
+      className="group flex flex-col gap-3 rounded-2xl border border-border bg-surface-container-lowest p-5 transition-all hover:border-primary/40 hover:shadow-lg"
+    >
+      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${entry.accent}`}>
+        <span className="material-symbols-outlined text-[20px]">{entry.icon}</span>
+      </div>
+      <h3 className="text-base font-semibold tracking-tight text-on-surface">{entry.title}</h3>
+      <p className="flex-1 text-sm leading-6 text-on-surface-variant">{entry.description}</p>
+      <span className="inline-flex items-center gap-1 text-sm font-semibold text-primary transition-transform group-hover:translate-x-0.5">
+        {entry.cta}
+        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+      </span>
+    </a>
+  )
+}
+
 function matches(query, ...fields) {
   if (!query) return true
   const lower = query.toLowerCase()
@@ -285,14 +331,11 @@ function matches(query, ...fields) {
 
 function SectionCard({ id, accent, title, count, countLabel, children }) {
   return (
-    <section
-      id={id}
-      className="api-docs-card min-w-0 rounded-[28px] border border-border bg-surface-container-lowest/90 p-6 shadow-[0_16px_60px_color-mix(in_oklab,var(--color-on-surface)_8%,transparent)]"
-    >
-      <div className="mb-6 flex items-center justify-between gap-4 border-b border-border pb-4">
+    <section id={id} className="min-w-0 scroll-mt-24">
+      <div className="mb-5 flex items-center justify-between gap-4 border-b border-border pb-3">
         <div className="flex items-center gap-3">
-          <span className={`h-3 w-3 rounded-full ${accent}`} />
-          <h2 className="text-2xl font-semibold tracking-tight text-on-surface">{title}</h2>
+          <span className={`h-2.5 w-2.5 rounded-full ${accent}`} />
+          <h2 className="text-2xl font-bold tracking-tight text-on-surface">{title}</h2>
         </div>
         <Badge variant="zone">{count} {countLabel}</Badge>
       </div>
@@ -303,6 +346,7 @@ function SectionCard({ id, accent, title, count, countLabel, children }) {
 
 export function DnsReference() {
   const [search, setSearch] = useState('')
+  const [activeId, setActiveId] = useState('quick-start')
   const query = search.trim()
 
   const filteredRecordTypes = useMemo(
@@ -351,75 +395,70 @@ export function DnsReference() {
 
   const rfcCount = filteredRfc.reduce((sum, group) => sum + group.rules.length, 0)
 
+  const visibleTocItems = useMemo(
+    () => [
+      { id: 'quick-start', label: 'Quick Start Paths' },
+      ...INDEX.filter((item) => visibility[item.id]),
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredRecordTypes.length, filteredEmailAuth.length, filteredConcepts.length, filteredDnssec.length, filteredRfc.length],
+  )
+
+  useEffect(() => {
+    const elements = visibleTocItems.map((item) => document.getElementById(item.id)).filter(Boolean)
+    if (elements.length === 0) return undefined
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        if (visible.length > 0) {
+          setActiveId(visible[0].target.id)
+        }
+      },
+      { rootMargin: '-96px 0px -65% 0px', threshold: 0 },
+    )
+
+    elements.forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
+  }, [visibleTocItems])
+
   return (
-    <MainLayout breadcrumbs={[{ label: 'DNS Reference' }]}>
-      <div className="api-docs-page min-h-full">
-        <div className="api-docs-page__layer api-docs-page__layer--light" />
-        <div className="api-docs-page__layer api-docs-page__layer--dark" />
-        <div className="api-docs-page__content">
-          <section className="px-6 pt-8 pb-6">
-            <div className="api-docs-card relative overflow-hidden rounded-[28px] border border-border bg-surface-container-lowest/90 p-8 shadow-[0_20px_80px_color-mix(in_oklab,var(--color-on-surface)_10%,transparent)]">
-              <div className="absolute -right-10 -top-12 h-40 w-40 rounded-full bg-violet-500/12 blur-3xl" />
-              <div className="absolute bottom-0 right-20 h-24 w-24 rounded-full bg-fuchsia-500/12 blur-2xl" />
-              <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-                <div className="max-w-3xl">
-                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface-container-low px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.28em] text-on-surface-variant">
-                    <span className="h-2 w-2 rounded-full bg-violet-500" />
-                    Concepts &amp; Terminology
-                  </div>
-                  <h1 className="font-serif text-4xl leading-tight text-on-surface md:text-5xl">
-                    DNS Reference — types, terms, and the rules this system enforces.
-                  </h1>
-                  <p className="mt-4 max-w-2xl text-sm leading-7 text-on-surface-variant">
-                    A plain-language guide to every record type you can create, email-authentication records (SPF / DKIM / DMARC / BIMI / MTA-STS / TLSRPT), core DNS concepts, DNSSEC terminology, and the exact RFC rules the frontend validates before anything reaches the server.
+    <MainLayout breadcrumbs={[{ label: 'Docs', to: '/docs' }, { label: 'DNS Reference' }]}>
+      <div className="min-h-full bg-surface">
+        <div className="mx-auto w-full max-w-7xl px-6 py-8">
+          <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_240px]">
+            <main className="min-w-0">
+              <header className="mb-10">
+                <h1 className="text-3xl font-bold tracking-tight text-on-surface md:text-4xl">
+                  DNS Reference
+                </h1>
+                <p className="mt-4 max-w-2xl text-base leading-7 text-on-surface-variant">
+                  A plain-language guide to every record type you can create, email-authentication records,
+                  core DNS concepts, DNSSEC terminology, and the exact RFC rules the frontend validates before
+                  anything reaches the server.
+                </p>
+              </header>
+
+              <section id="quick-start" className="mb-12 scroll-mt-24">
+                <h2 className="mb-4 text-xl font-bold tracking-tight text-on-surface">Quick Start Paths</h2>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {QUICK_START.map((entry) => (
+                    <QuickStartCard key={entry.title} entry={entry} />
+                  ))}
+                </div>
+              </section>
+
+              {!anyVisible && (
+                <div className="rounded-2xl border border-border bg-surface-container-lowest p-8 text-center">
+                  <p className="text-sm text-on-surface-variant">
+                    No types, terms, or rules match <strong className="text-on-surface">"{query}"</strong>.
                   </p>
                 </div>
-                <div className="w-full max-w-sm">
-                  <TextField
-                    icon="search"
-                    placeholder="Search types, terms, RFCs…"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                </div>
-              </div>
-            </div>
-          </section>
+              )}
 
-          <section className="px-6 pb-10">
-            <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-              <aside className="xl:sticky xl:top-20 xl:self-start">
-                <div className="api-docs-card rounded-[24px] border border-border bg-surface-container-lowest/90 p-5 shadow-[0_12px_48px_color-mix(in_oklab,var(--color-on-surface)_8%,transparent)]">
-                  <div className="mb-4 text-[10px] font-bold uppercase tracking-[0.28em] text-on-surface-variant">
-                    Quick Index
-                  </div>
-                  <div className="space-y-2">
-                    {INDEX.filter((item) => visibility[item.id]).map((item) => (
-                      <a
-                        key={item.id}
-                        href={`#${item.id}`}
-                        className="flex items-center justify-between rounded-2xl border border-transparent bg-surface-container-low px-3 py-3 text-sm font-medium text-on-surface-variant transition-colors hover:border-border hover:bg-surface-container-lowest hover:text-on-surface"
-                      >
-                        <span>{item.label}</span>
-                        <span className={`h-2.5 w-2.5 rounded-full ${item.accent}`} />
-                      </a>
-                    ))}
-                    {!anyVisible && (
-                      <p className="text-xs italic text-on-surface-variant">No sections match your search.</p>
-                    )}
-                  </div>
-                </div>
-              </aside>
-
-              <div className="min-w-0 space-y-8">
-                {!anyVisible && (
-                  <div className="api-docs-card rounded-[28px] border border-border bg-surface-container-lowest/90 p-8 text-center">
-                    <p className="text-sm text-on-surface-variant">
-                      No types, terms, or rules match <strong className="text-on-surface">"{query}"</strong>.
-                    </p>
-                  </div>
-                )}
-
+              <div className="space-y-12">
                 {visibility['record-types'] && (
                   <SectionCard
                     id="record-types"
@@ -639,8 +678,91 @@ export function DnsReference() {
                   </SectionCard>
                 )}
               </div>
-            </div>
-          </section>
+            </main>
+
+            <aside className="hidden xl:block">
+              <div className="sticky top-20 space-y-6 self-start">
+                <TextField
+                  icon="search"
+                  placeholder="Search types, terms, RFCs…"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+
+                <div>
+                  <div className="mb-3 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                    <span>On This Page</span>
+                    {query && (
+                      <button
+                        type="button"
+                        onClick={() => setSearch('')}
+                        className="font-medium normal-case tracking-normal text-primary hover:underline"
+                      >
+                        clear
+                      </button>
+                    )}
+                  </div>
+                  <ul className="space-y-1 border-l border-border">
+                    {visibleTocItems.map((item) => {
+                      const isActive = activeId === item.id
+                      return (
+                        <li key={item.id}>
+                          <a
+                            href={`#${item.id}`}
+                            className={`block -ml-px border-l-2 py-1.5 pl-3 text-sm transition-colors ${
+                              isActive
+                                ? 'border-primary font-semibold text-primary'
+                                : 'border-transparent text-on-surface-variant hover:border-outline-variant hover:text-on-surface'
+                            }`}
+                          >
+                            {item.label}
+                          </a>
+                        </li>
+                      )
+                    })}
+                    {!anyVisible && (
+                      <li className="pl-3 py-1.5 text-xs italic text-on-surface-variant">No matches.</li>
+                    )}
+                  </ul>
+                </div>
+
+                <div>
+                  <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.24em] text-on-surface-variant">
+                    Need Help?
+                  </div>
+                  <ul className="space-y-2">
+                    <li>
+                      <a
+                        href="/docs"
+                        className="flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">terminal</span>
+                        API Docs
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="/rules"
+                        className="flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">rule</span>
+                        Smart IP Rules
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="/"
+                        className="flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">language</span>
+                        Hosted Zones
+                      </a>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </aside>
+          </div>
         </div>
       </div>
     </MainLayout>

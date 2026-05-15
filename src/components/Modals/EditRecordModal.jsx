@@ -379,6 +379,12 @@ export function EditRecordModal() {
         throw new Error('ALIAS records can only have a single target.')
       }
 
+      const dedupKeys = values.map((v) => String(v).trim().replace(/\.$/, '').toLowerCase())
+      const dupKey = dedupKeys.find((k, i) => dedupKeys.indexOf(k) !== i)
+      if (dupKey) {
+        throw new Error(`Duplicate value "${dupKey}" — each value in an RRset must be unique.`)
+      }
+
       const nextNameError = validateRecordName({
         name: form.name,
         type: form.type,
@@ -609,8 +615,9 @@ export function EditRecordModal() {
               type="number"
               value={form.ttl}
               onChange={(event) => {
-                set('ttl', event.target.value)
-                setTtlError('')
+                const value = event.target.value
+                set('ttl', value)
+                setTtlError(validateTtl(value))
               }}
               className={`w-24 bg-surface-container-lowest border ${
                 ttlError ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/40'
@@ -621,7 +628,10 @@ export function EditRecordModal() {
                 <button
                   key={preset.value}
                   type="button"
-                  onClick={() => set('ttl', String(preset.value))}
+                  onClick={() => {
+                    set('ttl', String(preset.value))
+                    setTtlError('')
+                  }}
                   className={`px-2.5 py-1.5 text-xs font-medium rounded transition-colors ${
                     String(preset.value) === form.ttl
                       ? 'bg-primary text-on-primary'
