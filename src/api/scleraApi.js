@@ -34,6 +34,46 @@ function parseErrorMessage(error) {
   return 'Something went wrong while talking to the ScleraDNS API.'
 }
 
+// When responseType is 'blob', axios delivers an error body as a Blob rather
+// than a string, so the plain-text admin-API error never reaches
+// parseErrorMessage. Read it back out before falling through.
+async function readBlobErrorMessage(error) {
+  if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+    try {
+      const text = (await error.response.data.text()).trim()
+      if (text) return text
+    } catch {
+      // fall through to the generic parser
+    }
+  }
+  return parseErrorMessage(error)
+}
+
+// Pull the server-suggested name out of a Content-Disposition header,
+// preferring the RFC 5987 filename*= form when present.
+function parseContentDispositionFilename(header = '') {
+  if (typeof header !== 'string') return ''
+
+  const extended = header.match(/filename\*=(?:UTF-8'')?([^;]+)/i)
+  if (extended?.[1]) {
+    try {
+      return decodeURIComponent(extended[1].trim().replace(/^"|"$/g, ''))
+    } catch {
+      // fall through to the plain form
+    }
+  }
+
+  const plain = header.match(/filename="?([^";]+)"?/i)
+  return plain?.[1]?.trim() || ''
+}
+
+// Mirrors the server's scleraDNS-<UTC timestamp>.sqlite name, used only when
+// the response carries no Content-Disposition (e.g. a proxy stripped it).
+function defaultSnapshotName() {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+  return `scleraDNS-${stamp}.sqlite`
+}
+
 async function request(config) {
   try {
     const response = await client.request(config)
@@ -477,6 +517,29 @@ export async function resolveDns({ name, type }) {
       type,
     },
   })
+}
+
+// Streams a consistent SQLite snapshot from GET /exportDB. Returns the raw
+// file Blob plus the server-suggested filename so the caller can save it.
+export async function exportDatabase() {
+  try {
+    const response = await client.request({
+      method: 'GET',
+      url: '/exportDB',
+      responseType: 'blob',
+    })
+
+    return {
+      blob: response.data,
+      filename:
+        parseContentDispositionFilename(response.headers?.['content-disposition'])
+        || defaultSnapshotName(),
+    }
+  } catch (error) {
+    const apiError = new Error(await readBlobErrorMessage(error))
+    apiError.cause = error
+    throw apiError
+  }
 }
 
 export { API_BASE_URL, client as scleraApiClient }

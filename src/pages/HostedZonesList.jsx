@@ -5,10 +5,21 @@ import {
   Alert, Button, TextField,
 } from '../components/Common'
 import {
-  listRecords, listZonesDNSSEC, getZoneDisplayName, isInternalSystemZone, normalizeRecordValue,
+  listRecords, listZonesDNSSEC, getZoneDisplayName, isInternalSystemZone, normalizeRecordValue, exportDatabase,
 } from '../api/scleraApi'
 import { useModal } from '../hooks/useModal'
 import { useFeedback } from '../hooks/useFeedback'
+
+function triggerBlobDownload(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
 
 function mapZoneRows(recordsByZone) {
   return Object.entries(recordsByZone)
@@ -35,10 +46,11 @@ export function HostedZonesList() {
   const navigate = useNavigate()
   const createZoneModal = useModal('createZone')
   const deleteModal = useModal('deleteConfirm')
-  const { showError } = useFeedback()
+  const { showError, showSuccess } = useFeedback()
   const [zones, setZones] = useState([])
   const [dnssecStats, setDnssecStats] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -96,6 +108,20 @@ export function HostedZonesList() {
     }
   }, [page, totalPages])
 
+  const handleExport = useCallback(async () => {
+    setExporting(true)
+    try {
+      const { blob, filename } = await exportDatabase()
+      triggerBlobDownload(blob, filename)
+      showSuccess(`Saved ${filename}`, 'Database exported')
+    } catch (exportError) {
+      const message = exportError instanceof Error ? exportError.message : 'Unable to export the database.'
+      showError(message, 'Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }, [showError, showSuccess])
+
   const openZone = (row) => navigate(`/zones/${encodeURIComponent(row.name)}`)
 
   const requestDelete = (row) => {
@@ -136,6 +162,16 @@ export function HostedZonesList() {
             >
               <span className="material-symbols-outlined">refresh</span>
             </button>
+            <Button
+              variant="secondary"
+              icon={exporting ? 'progress_activity' : 'download'}
+              onClick={handleExport}
+              disabled={exporting}
+              title="Download a consistent SQLite snapshot of the DNS database"
+              className={exporting ? '[&>span:first-child]:animate-spin' : ''}
+            >
+              {exporting ? 'Exporting…' : 'Export Database'}
+            </Button>
             <Button
               icon="add"
               onClick={() => createZoneModal.open({
