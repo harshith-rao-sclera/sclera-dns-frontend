@@ -5,7 +5,8 @@
       "Bash(sed -i '281,397d' src/pages/ApiDocs.jsx)",
       "Bash(sed -n '278,285p' src/pages/ApiDocs.jsx)",
       "Bash(npx eslint *)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(git stash *)"
     ],
     "additionalDirectories": [
       "C:\\harshith\\dns_frontend"

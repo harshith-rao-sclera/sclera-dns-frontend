@@ -13,13 +13,13 @@
   --color-on-primary-container: #004bb5;
 
   /* Surfaces */
-  --color-surface: #f8f9fa;
+  --color-surface: #f2f5f8;
   --color-surface-white: #ffffff;
-  --color-surface-dim: #d1dce0;
+  --color-surface-dim: #d4dde2;
   --color-surface-bright: #f8f9fa;
-  --color-surface-container: #eaeff1;
-  --color-surface-container-low: #f1f4f6;
-  --color-surface-container-high: #e3e9ec;
+  --color-surface-container: #e8edf1;
+  --color-surface-container-low: #eef2f6;
+  --color-surface-container-high: #dee4ea;
   --color-surface-container-lowest: #ffffff;
 
   /* Text */
@@ -27,18 +27,18 @@
   --color-on-surface-variant: #6b7280;
 
   /* Sidebar */
-  --color-sidebar: #f1f5f9;
-  --color-sidebar-border: #e2e8f0;
+  --color-sidebar: #ebeff4;
+  --color-sidebar-border: #dde4ec;
   --color-sidebar-text: #64748b;
   --color-sidebar-text-hover: #0f172a;
   --color-sidebar-active-bg: #ffffff;
   --color-sidebar-active-text: #1d4ed8;
 
   /* Borders / Outline */
-  --color-border: #e5e7eb;
-  --color-border-light: #f3f4f6;
-  --color-outline: #9ca3af;
-  --color-outline-variant: #d1d5db;
+  --color-border: #d8dee5;
+  --color-border-light: #e9edf1;
+  --color-outline: #97a2b3;
+  --color-outline-variant: #c5cdd8;
 
   /* Semantic */
   --color-error: #dc2626;
@@ -76,29 +76,29 @@
   --color-on-primary: #06101d;
   --color-on-primary-container: #d7e7ff;
 
-  --color-surface: #0b1220;
+  --color-surface: #0c1322;
   --color-surface-white: #111827;
-  --color-surface-dim: #162033;
-  --color-surface-bright: #1a2740;
-  --color-surface-container: #111b2e;
-  --color-surface-container-low: #162235;
-  --color-surface-container-high: #22324a;
-  --color-surface-container-lowest: #0f172a;
+  --color-surface-dim: #16202f;
+  --color-surface-bright: #1d2940;
+  --color-surface-container: #151f31;
+  --color-surface-container-low: #19243a;
+  --color-surface-container-high: #212e48;
+  --color-surface-container-lowest: #161f33;
 
   --color-on-surface: #e5edf9;
   --color-on-surface-variant: #9aa9c1;
 
-  --color-sidebar: #08111f;
-  --color-sidebar-border: #1d2a3f;
+  --color-sidebar: #080f1c;
+  --color-sidebar-border: #1f2d40;
   --color-sidebar-text: #9eb0cb;
   --color-sidebar-text-hover: #f8fbff;
-  --color-sidebar-active-bg: #132238;
+  --color-sidebar-active-bg: #18263e;
   --color-sidebar-active-text: #8dbcff;
 
-  --color-border: #23324a;
+  --color-border: #273751;
   --color-border-light: #1a2740;
-  --color-outline: #6f829f;
-  --color-outline-variant: #33445e;
+  --color-outline: #74889f;
+  --color-outline-variant: #3a4d6c;
 
   --color-error: #ff7b7b;
   --color-error-container: #442128;

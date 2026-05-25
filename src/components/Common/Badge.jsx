@@ -1,4 +1,4 @@
-export function Badge({ children, variant = 'default', className = '' }) {
+export function Badge({ children, variant = 'default', className = '', ...rest }) {
   const variants = {
     default: 'bg-gray-100 text-gray-600',
     primary: 'bg-primary-container text-on-primary-container',
@@ -11,6 +11,7 @@ export function Badge({ children, variant = 'default', className = '' }) {
   return (
     <span
       className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${variants[variant]} ${className}`}
+      {...rest}
     >
       {children}
     </span>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { MainLayout } from '../components/Layout/MainLayout'
 import {
-  Alert, Button, Badge, StatusBadge, TextField, Select, Table, Pagination, BulkActionBar, BulkAction,
+  Alert, Button, Badge, StatusBadge, TextField, Select, Table, Pagination,
 } from '../components/Common'
 import {
   getZone,
@@ -47,7 +47,6 @@ export function ZoneRecords() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [recordType, setRecordType] = useState('')
-  const [selected, setSelected] = useState([])
   const [page, setPage] = useState(1)
   const perPage = 10
 
@@ -94,7 +93,6 @@ export function ZoneRecords() {
 
   useEffect(() => {
     setPage(1)
-    setSelected([])
   }, [recordType, search, zoneName])
 
   useEffect(() => {
@@ -107,7 +105,11 @@ export function ZoneRecords() {
     {
       key: 'name',
       label: 'Name',
-      render: (value) => <span className="text-sm font-semibold text-primary">{value}</span>,
+      render: (value) => (
+        <span className="block max-w-[220px] truncate text-sm font-semibold text-primary" title={value}>
+          {value}
+        </span>
+      ),
     },
     {
       key: 'type',
@@ -232,11 +234,6 @@ export function ZoneRecords() {
     },
   ]
 
-  const toggleRow = (id) =>
-    setSelected((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]))
-  const toggleAll = () =>
-    setSelected(selected.length === rows.length ? [] : rows.map((row) => row.id))
-
   return (
     <MainLayout
       breadcrumbs={[
@@ -292,6 +289,7 @@ export function ZoneRecords() {
               icon="search"
               value={search}
               onChange={(event) => { setSearch(event.target.value) }}
+              onClear={() => setSearch('')}
               className="flex-1 max-w-lg"
             />
             <Select
@@ -321,10 +319,7 @@ export function ZoneRecords() {
           <Table
             columns={columns}
             rows={rows}
-            selectedRows={selected}
-            onSelectRow={toggleRow}
-            onSelectAll={toggleAll}
-            isAllSelected={selected.length === rows.length && rows.length > 0}
+            selectable={false}
             loading={loading}
             onRowClick={(row) => detailsModal.open({
               zone: zoneName,
@@ -348,9 +343,6 @@ export function ZoneRecords() {
         </div>
       </section>
 
-      <BulkActionBar selectedCount={selected.length} onClose={() => setSelected([])} label="Records selected">
-        <BulkAction icon="refresh" label="Refresh" onClick={loadRecords} />
-      </BulkActionBar>
     </MainLayout>
   )
 }

@@ -5,6 +5,11 @@ import { listSmartIPRules, getZoneDisplayName } from '../api/scleraApi'
 import { useModal } from '../hooks/useModal'
 import { useFeedback } from '../hooks/useFeedback'
 
+// Max linked-zone badges to render inline in the table before collapsing
+// the remainder into a "+N more" badge. The full list is always visible
+// in the rule details modal (open by clicking the row).
+const MAX_VISIBLE_ZONES = 4
+
 function mapRules(rows) {
   return rows.map((rule) => ({
     id: rule.ID ?? rule.Id ?? rule.id ?? 0,
@@ -12,6 +17,7 @@ function mapRules(rows) {
     description: rule.Description ?? rule.description ?? '',
     pattern: rule.Pattern ?? rule.pattern ?? '',
     ttl: rule.TTL ?? rule.ttl ?? 0,
+    active: rule.Active ?? rule.active ?? true,
     linkedZones: (rule.Zones || []).map(getZoneDisplayName),
   }))
 }
@@ -60,6 +66,7 @@ export function SmartRulesList() {
     [rules, search],
   )
   const totalLinked = rules.reduce((sum, rule) => sum + rule.linkedZones.length, 0)
+  const activeRules = rules.filter((rule) => rule.active).length
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
   const paginatedRules = filtered.slice((page - 1) * perPage, page * perPage)
 
@@ -98,6 +105,7 @@ export function SmartRulesList() {
               icon="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onClear={() => setSearch('')}
             />
           </div>
           <div className="flex items-center gap-2 lg:shrink-0">
@@ -108,13 +116,13 @@ export function SmartRulesList() {
             >
               <span className="material-symbols-outlined">refresh</span>
             </button>
-            <Button icon="add_circle" onClick={() => createModal.open({ onSuccess: loadRules })}>
+            <Button icon="add" onClick={() => createModal.open({ onSuccess: loadRules })}>
               Create Smart IP Rule
             </Button>
           </div>
         </div>
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           <div className="bg-surface-container-lowest px-5 py-4 rounded-xl ring-1 ring-outline-variant/10 transition-all">
             <p className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-[0.14em]">
               Total Rules
@@ -122,6 +130,15 @@ export function SmartRulesList() {
             <div className="mt-4 flex items-end justify-between">
               <span className="text-[2rem] font-bold text-on-surface leading-none">{rules.length}</span>
               <span className="material-symbols-outlined text-outline-variant text-[24px]">rule</span>
+            </div>
+          </div>
+          <div className="bg-surface-container-lowest px-5 py-4 rounded-xl ring-1 ring-outline-variant/10 transition-all">
+            <p className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-[0.14em]">
+              Active Rules
+            </p>
+            <div className="mt-4 flex items-end justify-between">
+              <span className="text-[2rem] font-bold text-on-surface leading-none">{activeRules}</span>
+              <span className="material-symbols-outlined text-outline-variant text-[24px]">toggle_on</span>
             </div>
           </div>
           <div className="bg-surface-container-lowest px-5 py-4 rounded-xl ring-1 ring-outline-variant/10 transition-all">
@@ -172,11 +189,13 @@ export function SmartRulesList() {
                     <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0" />
-                          <span className="text-base font-semibold text-on-surface">{rule.name}</span>
+                          <span className="block max-w-[220px] truncate text-base font-semibold text-on-surface" title={rule.name}>
+                            {rule.name}
+                          </span>
                         </div>
                       </td>
                       <td className="px-5 py-4">
-                        <code className="text-[13px] font-mono bg-surface-container-high/50 px-2.5 py-1 rounded-md text-on-surface-variant">
+                        <code className="inline-block max-w-[360px] truncate align-middle text-[13px] font-mono bg-surface-container-high/50 px-2.5 py-1 rounded-md text-on-surface-variant" title={rule.pattern}>
                           {rule.pattern}
                         </code>
                       </td>
@@ -188,9 +207,17 @@ export function SmartRulesList() {
                       <td className="px-5 py-4">
                         {rule.linkedZones.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5">
-                            {rule.linkedZones.map((zone) => (
+                            {rule.linkedZones.slice(0, MAX_VISIBLE_ZONES).map((zone) => (
                               <Badge key={zone} variant="zone">{zone}</Badge>
                             ))}
+                            {rule.linkedZones.length > MAX_VISIBLE_ZONES && (
+                              <Badge
+                                variant="default"
+                                title={rule.linkedZones.slice(MAX_VISIBLE_ZONES).join(', ')}
+                              >
+                                {`+${rule.linkedZones.length - MAX_VISIBLE_ZONES} more`}
+                              </Badge>
+                            )}
                           </div>
                         ) : (
                           <span className="text-on-surface-variant">-</span>
@@ -198,17 +225,6 @@ export function SmartRulesList() {
                       </td>
                       <td className="px-5 py-4 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              addZonesModal.open({ ...rule, onSuccess: loadRules })
-                            }}
-                            className="p-1 text-outline hover:text-on-surface transition-colors hover:bg-surface-container-high rounded-full"
-                            title="Add zones"
-                          >
-                            <span className="material-symbols-outlined">add_link</span>
-                          </button>
                           <button
                             type="button"
                             onClick={(event) => {

@@ -4,7 +4,7 @@ import { useTheme } from '../../hooks/useTheme'
 const navItems = [
   { path: '/', label: 'Hosted Zones', icon: 'language', fillActive: true },
   { path: '/rules', label: 'Smart IP Rules', icon: 'rule', fillActive: false },
-  { path: '/docs', label: 'API Docs', icon: 'terminal', fillActive: false },
+  { path: '/docs', label: 'API Docs', iconText: 'API', fillActive: false },
   { path: '/reference', label: 'DNS Reference', icon: 'menu_book', fillActive: false },
 ]
 
@@ -44,7 +44,7 @@ export function Sidebar({ isCollapsed = false, onToggle = () => {} }) {
       </div>
 
       <nav className="flex-1 space-y-1 px-3">
-        {navItems.map(({ path, label, icon, fillActive }) => {
+        {navItems.map(({ path, label, icon, iconText, fillActive }) => {
           const active = isActive(path)
           return (
             <Link
@@ -59,12 +59,18 @@ export function Sidebar({ isCollapsed = false, onToggle = () => {} }) {
                   : 'text-sidebar-text font-medium hover:bg-surface-container-high/70 hover:text-sidebar-text-hover'
               }`}
             >
-              <span
-                className="material-symbols-outlined text-[20px] flex-shrink-0"
-                style={active && fillActive ? { fontVariationSettings: "'FILL' 1" } : undefined}
-              >
-                {icon}
-              </span>
+              {iconText ? (
+                <span className="flex h-5 w-5 items-center justify-center font-mono text-[12px] font-bold tracking-tight flex-shrink-0">
+                  {iconText}
+                </span>
+              ) : (
+                <span
+                  className="material-symbols-outlined text-[20px] flex-shrink-0"
+                  style={active && fillActive ? { fontVariationSettings: "'FILL' 1" } : undefined}
+                >
+                  {icon}
+                </span>
+              )}
               <span
                 className={`overflow-hidden whitespace-nowrap transition-all duration-200 ${
                   isCollapsed ? 'max-w-0 opacity-0 -translate-x-1' : 'max-w-[160px] opacity-100 translate-x-0'

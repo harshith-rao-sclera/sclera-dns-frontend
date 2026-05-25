@@ -20,17 +20,20 @@ export function Modal({ isOpen, onClose, title = '', subtitle = '', children, fo
   if (!isOpen) return null
 
   const widths = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-2xl',
-    xl: 'max-w-4xl',
-    xxl: 'max-w-5xl',
+    sm: 'max-w-md',
+    md: 'max-w-lg',
+    lg: 'max-w-3xl',
+    xl: 'max-w-5xl',
+    xxl: 'max-w-6xl',
   }
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] z-[60]" onClick={onClose} />
-      <div className="fixed inset-0 z-[70] flex items-center justify-center p-5 md:p-6">
+      <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] z-[60]" />
+      <div
+        className="fixed inset-0 z-[70] flex items-center justify-center p-5 md:p-6"
+        onClick={onClose}
+      >
         <div
           className={`bg-surface-container-lowest rounded-lg shadow-2xl flex flex-col max-h-[85vh] ${widths[size]} w-full`}
           onClick={(e) => e.stopPropagation()}

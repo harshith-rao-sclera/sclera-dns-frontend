@@ -54,6 +54,11 @@ export function toAsciiDomain(value = '') {
   const trimmed = value.trim()
   if (!trimmed || trimmed === '@' || trimmed === '*') return trimmed
 
+  // Pure-ASCII inputs don't need IDN normalization. Skipping the URL parser
+  // here also avoids its legacy IPv4-shorthand expansion — e.g. a PTR
+  // subdomain "5" in a reverse zone would otherwise become "0.0.0.5".
+  if (!hasNonAscii(trimmed)) return trimmed.toLowerCase()
+
   const hadTrailingDot = trimmed.endsWith('.')
   let core = hadTrailingDot ? trimmed.slice(0, -1) : trimmed
 
@@ -416,6 +421,22 @@ export async function deleteSmartIPRule({ id, name }) {
   })
 }
 
+export async function setSmartIPRuleActive({ id, name, active }) {
+  const data = { active: Boolean(active) }
+
+  if (id) {
+    data.id = Number(id)
+  } else if (name) {
+    data.name = name.trim()
+  }
+
+  return request({
+    method: 'POST',
+    url: '/setSmartIPRuleActive',
+    data,
+  })
+}
+
 export async function secureZone(zone) {
   return request({
     method: 'POST',
@@ -437,6 +458,13 @@ export async function getZoneDNSSEC(zone) {
     method: 'GET',
     url: '/getZoneDNSSEC',
     params: { zone: normalizeZoneName(zone) },
+  })
+}
+
+export async function listZonesDNSSEC() {
+  return request({
+    method: 'GET',
+    url: '/listZonesDNSSEC',
   })
 }
 

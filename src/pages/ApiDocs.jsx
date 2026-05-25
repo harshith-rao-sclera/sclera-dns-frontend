@@ -364,10 +364,22 @@ const QUICK_START = [
   },
 ]
 
-function QuickStartCard({ entry }) {
+function QuickStartCard({ entry, onActivate }) {
+  const handleClick = (event) => {
+    event.preventDefault()
+    onActivate?.()
+    const id = entry.href.replace(/^#/, '')
+    // Clearing the search may re-add a filtered-out section; wait for the
+    // re-render before scrolling to the target.
+    setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 60)
+  }
+
   return (
     <a
       href={entry.href}
+      onClick={handleClick}
       className="group flex flex-col gap-3 rounded-2xl border border-border bg-surface-container-lowest p-5 transition-all hover:border-primary/40 hover:shadow-lg"
     >
       <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${entry.accent}`}>
@@ -470,6 +482,19 @@ export function ApiDocs() {
     [filteredSections],
   )
 
+  const firstMatchId = filteredSections.length > 0
+    ? filteredSections[0].title.toLowerCase().replace(/\s+/g, '-')
+    : null
+
+  // After a search settles, jump to the first matching section.
+  useEffect(() => {
+    if (!query || !firstMatchId) return undefined
+    const timer = setTimeout(() => {
+      document.getElementById(firstMatchId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [query, firstMatchId])
+
   useEffect(() => {
     const elements = sectionIds.map((id) => document.getElementById(id)).filter(Boolean)
     if (elements.length === 0) return undefined
@@ -493,14 +518,14 @@ export function ApiDocs() {
   return (
     <MainLayout breadcrumbs={[{ label: 'Docs', to: '/docs' }, { label: 'API Reference' }]}>
       <div className="min-h-full bg-surface">
-        <div className="mx-auto w-full max-w-7xl px-6 py-8">
+        <div className="w-full px-6 py-8">
           <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_240px]">
             <main className="min-w-0">
               <header className="mb-10">
                 <h1 className="text-3xl font-bold tracking-tight text-on-surface md:text-4xl">
                   ScleraDNS HTTP API Reference
                 </h1>
-                <p className="mt-4 max-w-2xl text-base leading-7 text-on-surface-variant">
+                <p className="mt-4 text-base leading-7 text-on-surface-variant">
                   Every endpoint for zones, records, Smart IP rules, DNSSEC, and direct DNS resolution.
                   All error responses are plain text; zone names returned by the backend may include trailing dots.
                 </p>
@@ -510,7 +535,7 @@ export function ApiDocs() {
                 <h2 className="mb-4 text-xl font-bold tracking-tight text-on-surface">Quick Start Paths</h2>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {QUICK_START.map((entry) => (
-                    <QuickStartCard key={entry.title} entry={entry} />
+                    <QuickStartCard key={entry.title} entry={entry} onActivate={() => setSearch('')} />
                   ))}
                 </div>
               </section>
@@ -565,6 +590,7 @@ export function ApiDocs() {
                   placeholder="Search endpoints…"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
+                  onClear={() => setSearch('')}
                 />
 
                 <div>

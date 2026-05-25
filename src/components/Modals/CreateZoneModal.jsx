@@ -44,6 +44,13 @@ function validateNameserver(ns, zoneAscii) {
   const hostError = validateZoneName(asciiHost)
   if (hostError) return `Nameserver host: ${hostError.replace(/^Zone name/, 'Value')}`
 
+  // A nameserver must be a fully-qualified host with at least two labels
+  // (e.g. ns1.example.com). A single-label name like "c" passes the label
+  // rules but is useless as a nameserver — the backend rejects it too.
+  if (!asciiHost.replace(/\.$/, '').includes('.')) {
+    return `Nameserver host "${host}" must be a fully-qualified domain name with at least two labels (e.g. ns1.example.com).`
+  }
+
   const bailiwick = bailiwickOf(host, zoneAscii)
 
   if (bailiwick === 'in') {
@@ -73,7 +80,7 @@ export function CreateZoneModal() {
   const { showError, showSuccess } = useFeedback()
   const [zone, setZone] = useState('')
   const [zoneError, setZoneError] = useState('')
-  const [nameservers, setNameservers] = useState([])
+  const [nameservers, setNameservers] = useState([makeNameserver()])
   const [nsErrors, setNsErrors] = useState([])
   const [nsTtl, setNsTtl] = useState('3600')
   const [nsTtlError, setNsTtlError] = useState('')
@@ -84,7 +91,7 @@ export function CreateZoneModal() {
   useEffect(() => {
     if (modal.isOpen) {
       setZone(modal.data?.zone ?? '')
-      setNameservers([])
+      setNameservers([makeNameserver()])
       setNsErrors([])
       setNsTtl('3600')
       setNsTtlError('')
@@ -158,12 +165,12 @@ export function CreateZoneModal() {
         }
       }
 
-      await modal.data?.onSuccess?.()
       modal.close()
       setZone('')
-      setNameservers([])
+      setNameservers([makeNameserver()])
       setNsTtl('3600')
       setEnableDnssec(false)
+      await modal.data?.onSuccess?.(asciiZone)
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : 'Unable to create zone.'
       setError(message)
@@ -251,21 +258,37 @@ export function CreateZoneModal() {
               <span className="material-symbols-outlined text-[18px]">lock</span>
             </div>
             <h3 className="text-base font-semibold tracking-tight text-on-surface">DNSSEC</h3>
+            <span className="group relative inline-flex">
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-on-surface-variant cursor-help">
+                <path fillRule="evenodd" clipRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" />
+              </svg>
+              <span className="pointer-events-none absolute left-0 top-full mt-1.5 z-50 hidden w-72 rounded-md bg-surface-container-high px-3 py-2 text-[11px] leading-relaxed text-on-surface shadow-lg ring-1 ring-outline-variant/30 group-hover:block">
+                Provisions a KSK + ZSK (ECDSA P-256) immediately after the zone is created. DS records will be available on the zone detail page for publication at your registrar.
+              </span>
+            </span>
           </div>
 
           <button
             type="button"
             onClick={() => setEnableDnssec((v) => !v)}
-            className={`flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors ${
+            className={`flex w-full items-center justify-between gap-4 rounded-xl border p-4 text-left transition-colors ${
               enableDnssec
                 ? 'border-primary/40 bg-primary/[0.04]'
                 : 'border-outline-variant/40 bg-surface-container-lowest/40 hover:bg-surface-container-lowest/70'
             }`}
           >
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-on-surface">
+                Enable DNSSEC Signing
+              </p>
+              <p className="mt-1 text-xs leading-5 text-on-surface-variant">
+                Add a layer of <span className="text-primary">security</span> by cryptographically signing your DNS records.
+              </p>
+            </div>
             <span
               role="switch"
               aria-checked={enableDnssec}
-              className={`mt-0.5 relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                 enableDnssec ? 'bg-primary' : 'bg-outline/40'
               }`}
             >
@@ -275,15 +298,6 @@ export function CreateZoneModal() {
                 }`}
               />
             </span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-on-surface">
-                Enable DNSSEC after creation
-              </p>
-              <p className="mt-1 text-xs leading-5 text-on-surface-variant">
-                Provisions a KSK + ZSK (ECDSA P-256) immediately after the zone is created. DS records will be
-                available on the zone detail page for publication at your registrar.
-              </p>
-            </div>
           </button>
         </section>
 
@@ -294,6 +308,14 @@ export function CreateZoneModal() {
                 <span className="material-symbols-outlined text-[18px]">dns</span>
               </div>
               <h3 className="text-base font-semibold tracking-tight text-on-surface">Nameserver Configuration</h3>
+              <span className="group relative inline-flex">
+                <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-on-surface-variant cursor-help">
+                  <path fillRule="evenodd" clipRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" />
+                </svg>
+                <span className="pointer-events-none absolute left-0 top-full mt-1.5 z-50 hidden w-72 rounded-md bg-surface-container-high px-3 py-2 text-[11px] leading-relaxed text-on-surface shadow-lg ring-1 ring-outline-variant/30 group-hover:block">
+                  RFC 1034 §4.2 recommends at least two nameservers per zone for redundancy. You can still create the zone with one — this is just a heads-up.
+                </span>
+              </span>
             </div>
             <button
               type="button"
@@ -305,18 +327,8 @@ export function CreateZoneModal() {
             </button>
           </div>
 
-          {nameservers.length === 0 ? (
-            <p className="text-xs text-on-surface-variant">
-              At least one nameserver is required. The bailiwick of each host is detected from the zone name.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {nameservers.length === 1 && (
-                <Alert tone="info" title="Consider adding a second nameserver">
-                  RFC 1034 §4.2 recommends at least two nameservers per zone for redundancy. You can still create the zone with one — this is just a heads-up.
-                </Alert>
-              )}
-              {nameservers.map((ns, index) => {
+          <div className="space-y-3">
+            {nameservers.map((ns, index) => {
                 const bailiwick = bailiwickOf(ns.host, asciiZone)
                 const isIn = bailiwick === 'in'
                 const isOut = bailiwick === 'out'
@@ -374,8 +386,9 @@ export function CreateZoneModal() {
                       <button
                         type="button"
                         onClick={() => removeNs(index)}
-                        className="p-2 text-outline hover:text-error transition-colors"
-                        title="Remove nameserver"
+                        disabled={nameservers.length === 1}
+                        className="p-2 text-outline transition-colors enabled:hover:text-error disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={nameservers.length === 1 ? 'At least one nameserver is required' : 'Remove nameserver'}
                       >
                         <span className="material-symbols-outlined text-[18px]">delete</span>
                       </button>
@@ -387,8 +400,7 @@ export function CreateZoneModal() {
                   </div>
                 )
               })}
-            </div>
-          )}
+          </div>
 
           <div className="pt-2">
             <label className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide block mb-1.5">
@@ -429,7 +441,7 @@ export function CreateZoneModal() {
             </div>
             {nsTtlError && <p className="text-xs text-error mt-1.5">{nsTtlError}</p>}
             <p className="text-xs text-on-surface-variant mt-1.5">
-              Applied to both the apex NS RRset and any glue A/AAAA records. Defaults to 3600. Max 2147483647 (RFC 2181).
+              Applied to both the apex NS RRset and any glue A/AAAA records.
             </p>
           </div>
         </section>

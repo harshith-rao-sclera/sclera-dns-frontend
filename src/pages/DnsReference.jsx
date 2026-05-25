@@ -36,6 +36,22 @@ const RECORD_TYPES = [
     rfc: 'Non-RFC vendor extension',
   },
   {
+    type: 'CAA',
+    title: 'Certification authority authorization',
+    what: 'Restricts which certificate authorities may issue TLS certificates for the domain. A hardening control: a CA must refuse to issue if a CAA record exists and does not list it.',
+    how: 'RDATA is "<flags> <tag> "<value>"". flags is 0-255 (bit 7 = "issuer critical"; usually 0). tag is issue (any cert), issuewild (wildcard certs), or iodef (where to report violations). The value is a CA domain like "letsencrypt.org" (";" forbids all issuance), or a mailto:/https: URL for iodef. CAs walk up the tree from the requested name and honor the first CAA found; enforced at issuance time, not by browsers.',
+    example: 'example.com.  3600  IN  CAA  0 issue "letsencrypt.org"\nexample.com.  3600  IN  CAA  0 issuewild ";"\nexample.com.  3600  IN  CAA  0 iodef "mailto:security@example.com"',
+    rfc: 'RFC 8659',
+  },
+  {
+    type: 'DS',
+    title: 'Delegation signer (DNSSEC)',
+    what: 'Links a parent zone’s trust to a delegated child zone’s DNSSEC keys — the chain-of-trust connector. A DS is a hash of the child’s key-signing key, published in the PARENT zone at the delegation point.',
+    how: 'RDATA is "<key-tag> <algorithm> <digest-type> <digest>". A validating resolver walks down: the parent vouches for the child’s key via the DS, then the child’s key signs its own records. Lives at the delegation point (a sub-name with NS), never at a zone’s own apex — your zone’s own DS goes in ITS parent (normally submitted to your registrar, who publishes it in the TLD zone). You only add a DS here when you host the parent zone of a signed child you delegate. digest-type: 1=SHA-1, 2=SHA-256, 4=SHA-384.',
+    example: 'sub.example.com.  3600  IN  NS  ns1.child.net.\nsub.example.com.  3600  IN  DS  12345 13 2 a1b2c3…(64 hex for SHA-256)',
+    rfc: 'RFC 4034 §5',
+  },
+  {
     type: 'MX',
     title: 'Mail exchanger',
     what: 'Declares the mail servers that accept email for a domain, each with a preference value. A special "Null MX" form (preference 0, target ".") declares that the domain accepts NO mail.',
@@ -58,6 +74,54 @@ const RECORD_TYPES = [
     how: 'The owner name is the IP address reversed under in-addr.arpa (IPv4) or ip6.arpa (IPv6). Used by mail servers and logging tools to label connections.',
     example: '10.2.0.192.in-addr.arpa.  3600  IN  PTR  mail.example.com.',
     rfc: 'RFC 1035 §3.3.12',
+  },
+  {
+    type: 'SRV',
+    title: 'Service locator',
+    what: 'Advertises the host and port where a named service runs, so SRV-aware clients discover it instead of hard-coding the location.',
+    how: 'The owner name encodes the service and protocol as _service._proto.name (e.g. _sip._tcp.example.com). RDATA is "<priority> <weight> <port> <target>": lower priority is tried first (like MX), weight splits load among equal priorities, and target is the hostname running the service (with A/AAAA, never a CNAME). A target of "." means the service is decidedly not available. Only SRV-aware clients (SIP, XMPP, LDAP, Kerberos, Minecraft, mail autodiscovery) use it — browsers do not use SRV for HTTP.',
+    example: '_sip._tcp.example.com.  3600  IN  SRV  10 60 5060 sip1.example.com.',
+    rfc: 'RFC 2782',
+  },
+  {
+    type: 'NAPTR',
+    title: 'Naming authority pointer',
+    what: 'Rule-based rewriting: turns a name into the next thing to look up (often an SRV) or rewrites it into a URI. Sits one level above SRV — it tells a client which services/protocols exist and how to reach each.',
+    how: 'RDATA is "<order> <preference> "<flags>" "<service>" "<regexp>" <replacement>". Records are processed lowest-order first, preference breaking ties. flags decide what happens next ("S" → look up an SRV, "A" → look up A/AAAA, "U" → terminal, output is a URI). regexp and replacement are mutually exclusive: use a regexp (with replacement ".") to rewrite the input into a URI, or a replacement domain (with regexp "") to point at the next name. Mainly used for ENUM (phone numbers → URIs) and SIP/service discovery — rare outside telecom.',
+    example: '# S-NAPTR → SRV:\nexample.com.  3600  IN  NAPTR  100 10 "S" "SIP+D2U" "" _sip._udp.example.com.\n# Terminal URI rewrite (ENUM):\n4.3.2.1.5.5.5.1.e164.arpa.  IN  NAPTR  100 10 "U" "E2U+sip" "!^.*$!sip:info@example.com!" .',
+    rfc: 'RFC 3403',
+  },
+  {
+    type: 'TLSA',
+    title: 'TLS authentication (DANE)',
+    what: 'Pins a TLS certificate or public key in DNS so clients can verify a server’s cert via DNS instead of relying solely on the CA system. The building block of DANE.',
+    how: 'The owner name is _<port>._<proto>.<host> (like SRV), e.g. _25._tcp.mail.example.com. RDATA is "<usage> <selector> <matching-type> <cert-data>": usage (0=PKIX-TA, 1=PKIX-EE, 2=DANE-TA, 3=DANE-EE), selector (0=full cert, 1=public key), matching-type (0=exact, 1=SHA-256, 2=SHA-512), then the cert/key or its hash in hex. DANE’s security rests entirely on DNSSEC — an unsigned TLSA record is ignored, so the zone must be signed. Mostly used for server-to-server mail (DANE-SMTP, RFC 7672); browsers do not implement DANE.',
+    example: '_25._tcp.mail.example.com.  3600  IN  TLSA  3 1 1 <64-hex SHA-256 of the public key>',
+    rfc: 'RFC 6698',
+  },
+  {
+    type: 'SSHFP',
+    title: 'SSH host-key fingerprint',
+    what: 'Publishes the fingerprint of a server’s SSH host key in DNS, so an SSH client can verify the key automatically instead of the trust-on-first-use "are you sure you want to continue connecting?" prompt.',
+    how: 'RDATA is "<algorithm> <fingerprint-type> <fingerprint>": algorithm (1=RSA, 2=DSA, 3=ECDSA, 4=Ed25519), fingerprint-type (1=SHA-1, 2=SHA-256), then the key hash in hex. Lives at the host’s own name (no _service._proto prefix). With "ssh -o VerifyHostKeyDNS=yes", the client looks up the SSHFP, requires it to be DNSSEC-validated, and trusts the matching host key without prompting. The zone must be DNSSEC-signed — ssh ignores unsigned SSHFP. Generate with "ssh-keygen -r <host>".',
+    example: 'host.example.com.  3600  IN  SSHFP  4 2 <64-hex SHA-256 of the Ed25519 host key>',
+    rfc: 'RFC 4255 / RFC 6594',
+  },
+  {
+    type: 'HTTPS',
+    title: 'HTTPS service binding',
+    what: 'Tells a browser how to connect to an https:// site before it connects — preferred protocol (HTTP/3), alternate port, IP hints, and Encrypted ClientHello — and can alias the zone apex to another name. The modern successor to SRV that browsers actually use.',
+    how: 'RDATA is "<priority> <target> [SvcParams...]". priority 0 = AliasMode (the record just aliases to target — the standard apex-CNAME alternative; no params). priority >0 = ServiceMode: target "." means the owner name, then key=value params: alpn (h3,h2…), no-default-alpn, port, ipv4hint/ipv6hint (skip an A/AAAA round-trip), ech (Encrypted ClientHello — hides the SNI), mandatory. Unlike SRV, Chrome/Firefox/Safari query and honor HTTPS records. No DNSSEC requirement (though ECH is stronger with it).',
+    example: 'example.com.  3600  IN  HTTPS  1 . alpn="h3,h2" port=443 ipv4hint=192.0.2.1\n# AliasMode (apex → CDN):\nexample.com.  3600  IN  HTTPS  0 cdn.provider.net.',
+    rfc: 'RFC 9460',
+  },
+  {
+    type: 'SVCB',
+    title: 'Service binding (generic)',
+    what: 'The generic form of the service-binding record — same machinery as HTTPS, but for any protocol (not just web). HTTPS is just SVCB specialized for https:// origins.',
+    how: 'Identical presentation format to HTTPS: "<priority> <target> [SvcParams...]", with AliasMode (priority 0) and ServiceMode (>0) and the same SvcParams (alpn, port, ipv4hint, ipv6hint, ech, mandatory, no-default-alpn). The owner name is usually protocol-specific (e.g. _dns.example.net for DNS-over-TLS/HTTPS discovery). Use HTTPS for websites; use SVCB for everything else.',
+    example: '_dns.example.net.  3600  IN  SVCB  1 dns.example.net. alpn=dot port=853',
+    rfc: 'RFC 9460',
   },
   {
     type: 'TXT',
@@ -254,8 +318,15 @@ const RFC_COMPLIANCE = [
       { rfc: 'RFC 7505', rule: 'Null MX — "0 ." — declares the domain accepts no mail. Preference must be exactly 0 and the Null MX must be the only MX value at its name.' },
       { rfc: 'RFC 5321 §5.1', rule: 'MX preference defines sender try-order (lowest first). Multiple MX records at the same name are common and allowed; senders pick the lowest-preference reachable host.' },
       { rfc: 'RFC 1035 §3.3.12', rule: 'PTR records point to a single valid hostname (not an IP, not a wildcard).' },
-      { rfc: 'RFC 4592', rule: 'CNAME, ALIAS, NS, MX, and PTR targets cannot be wildcard patterns — wildcards are owner-name semantics only.' },
-      { rfc: 'RFC 2181 §10.3', rule: 'NS and MX targets cannot point to a name that already has a CNAME record (same-zone check at validation time).' },
+      { rfc: 'RFC 2782', rule: 'SRV records use a _service._proto owner name (e.g. _sip._tcp) and "<priority> <weight> <port> <target>" RDATA. Priority, weight, and port are 16-bit unsigned integers (0-65535); the target is a hostname or "." (service not available).' },
+      { rfc: 'RFC 3403', rule: 'NAPTR records are "<order> <preference> "<flags>" "<service>" "<regexp>" <replacement>". Order and preference are 16-bit unsigned integers; flags/service/regexp are double-quoted; flags are letters and digits only. The regexp and replacement fields are mutually exclusive — when a regexp is set, replacement must be ".".' },
+      { rfc: 'RFC 8659', rule: 'CAA records are "<flags> <tag> "<value>"". flags is an 8-bit unsigned integer (0-255); tag is issue, issuewild, or iodef; the value is double-quoted. An iodef value must be a mailto:, http:, or https: URL.' },
+      { rfc: 'RFC 4034 §5', rule: 'DS records are "<key-tag> <algorithm> <digest-type> <digest>". key-tag is 16-bit, algorithm 8-bit; digest-type is 1 (SHA-1), 2 (SHA-256), or 4 (SHA-384) with a hex digest of matching length. DS must sit at a delegation point (a sub-name with NS records), never at the zone apex, and the parent zone must itself be DNSSEC-signed (an unsigned parent can’t sign the DS, so validators ignore it).' },
+      { rfc: 'RFC 6698', rule: 'TLSA records are "<usage> <selector> <matching-type> <cert-data>" at a _<port>._<proto> owner name. usage 0-3, selector 0-1, matching-type 0-2 (SHA-256 data = 64 hex, SHA-512 = 128). The zone must be DNSSEC-signed — DANE ignores unsigned TLSA records.' },
+      { rfc: 'RFC 4255', rule: 'SSHFP records are "<algorithm> <fingerprint-type> <fingerprint>". algorithm 1-4 (RSA/DSA/ECDSA/Ed25519), fingerprint-type 1 (SHA-1, 40 hex) or 2 (SHA-256, 64 hex). The zone must be DNSSEC-signed — ssh only trusts validated SSHFP records.' },
+      { rfc: 'RFC 9460', rule: 'HTTPS and SVCB records are "<priority> <target> [params...]". priority is a 16-bit unsigned integer; 0 = AliasMode (target only, no SvcParams). In ServiceMode, params (alpn, port, ipv4hint, ipv6hint, ech, mandatory, no-default-alpn, or keyNNN) each carry a key-appropriate value: port is 0-65535, ipv4hint/ipv6hint are valid IPs, and no key may repeat.' },
+      { rfc: 'RFC 4592', rule: 'CNAME, ALIAS, NS, MX, PTR, and SRV targets cannot be wildcard patterns — wildcards are owner-name semantics only.' },
+      { rfc: 'RFC 2181 §10.3 / RFC 2782', rule: 'NS, MX, and SRV targets cannot point to a name that already has a CNAME record (same-zone check at validation time).' },
       { rfc: 'RFC 2181 §8', rule: 'TTL must be a non-negative integer no greater than 2147483647 (32-bit signed). Zero means "do not cache".' },
     ],
   },
@@ -284,7 +355,7 @@ const QUICK_START = [
     icon: 'category',
     accent: 'bg-violet-500/12 text-violet-600',
     title: 'Record Types',
-    description: 'A, AAAA, CNAME, ALIAS, MX, NS, PTR, TXT, and SOA — what each one does, how it works, and a working example.',
+    description: 'A, AAAA, CAA, CNAME, ALIAS, DS, HTTPS, SVCB, MX, NS, PTR, SRV, NAPTR, TLSA, SSHFP, TXT, and SOA — what each one does, how it works, and a working example.',
     href: '#record-types',
     cta: 'Browse types',
   },
@@ -306,10 +377,22 @@ const QUICK_START = [
   },
 ]
 
-function QuickStartCard({ entry }) {
+function QuickStartCard({ entry, onActivate }) {
+  const handleClick = (event) => {
+    event.preventDefault()
+    onActivate?.()
+    const id = entry.href.replace(/^#/, '')
+    // Clearing the search may re-add a filtered-out section; wait for the
+    // re-render before scrolling to the target.
+    setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 60)
+  }
+
   return (
     <a
       href={entry.href}
+      onClick={handleClick}
       className="group flex flex-col gap-3 rounded-2xl border border-border bg-surface-container-lowest p-5 transition-all hover:border-primary/40 hover:shadow-lg"
     >
       <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${entry.accent}`}>
@@ -406,6 +489,17 @@ export function DnsReference() {
     [filteredRecordTypes.length, filteredEmailAuth.length, filteredConcepts.length, filteredDnssec.length, filteredRfc.length],
   )
 
+  const firstMatchId = INDEX.find((item) => visibility[item.id])?.id ?? null
+
+  // After a search settles, jump to the first matching section.
+  useEffect(() => {
+    if (!query || !firstMatchId) return undefined
+    const timer = setTimeout(() => {
+      document.getElementById(firstMatchId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [query, firstMatchId])
+
   useEffect(() => {
     const elements = visibleTocItems.map((item) => document.getElementById(item.id)).filter(Boolean)
     if (elements.length === 0) return undefined
@@ -429,14 +523,14 @@ export function DnsReference() {
   return (
     <MainLayout breadcrumbs={[{ label: 'Docs', to: '/docs' }, { label: 'DNS Reference' }]}>
       <div className="min-h-full bg-surface">
-        <div className="mx-auto w-full max-w-7xl px-6 py-8">
+        <div className="w-full px-6 py-8">
           <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_240px]">
             <main className="min-w-0">
               <header className="mb-10">
                 <h1 className="text-3xl font-bold tracking-tight text-on-surface md:text-4xl">
                   DNS Reference
                 </h1>
-                <p className="mt-4 max-w-2xl text-base leading-7 text-on-surface-variant">
+                <p className="mt-4 text-base leading-7 text-on-surface-variant">
                   A plain-language guide to every record type you can create, email-authentication records,
                   core DNS concepts, DNSSEC terminology, and the exact RFC rules the frontend validates before
                   anything reaches the server.
@@ -447,7 +541,7 @@ export function DnsReference() {
                 <h2 className="mb-4 text-xl font-bold tracking-tight text-on-surface">Quick Start Paths</h2>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {QUICK_START.map((entry) => (
-                    <QuickStartCard key={entry.title} entry={entry} />
+                    <QuickStartCard key={entry.title} entry={entry} onActivate={() => setSearch('')} />
                   ))}
                 </div>
               </section>
@@ -689,6 +783,7 @@ export function DnsReference() {
                   placeholder="Search types, terms, RFCs…"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
+                  onClear={() => setSearch('')}
                 />
 
                 <div>
