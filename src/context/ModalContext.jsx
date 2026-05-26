@@ -14,6 +14,7 @@ export function ModalProvider({ children }) {
     createRule: { isOpen: false, data: null },
     addZones: { isOpen: false, data: null },
     deleteConfirm: { isOpen: false, data: null },
+    importExport: { isOpen: false, data: null },
   })
 
   const openModal = useCallback((modalName, data = null) => {

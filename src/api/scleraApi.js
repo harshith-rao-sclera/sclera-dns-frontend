@@ -70,8 +70,18 @@ function parseContentDispositionFilename(header = '') {
 // Mirrors the server's scleraDNS-<UTC timestamp>.sqlite name, used only when
 // the response carries no Content-Disposition (e.g. a proxy stripped it).
 function defaultSnapshotName() {
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
-  return `scleraDNS-${stamp}.sqlite`
+  return `scleraDNS-${utcStamp()}.sqlite`
+}
+
+function utcStamp() {
+  return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+}
+
+// Fallback name for a records export when Content-Disposition is absent.
+function defaultZonesExportName(format, zone) {
+  const ext = format === 'xlsx' ? 'xlsx' : 'csv'
+  const scope = zone ? `-${normalizeZoneName(zone)}` : ''
+  return `scleraDNS-zones${scope}-${utcStamp()}.${ext}`
 }
 
 async function request(config) {
@@ -540,6 +550,86 @@ export async function exportDatabase() {
     apiError.cause = error
     throw apiError
   }
+}
+
+// Downloads human-readable DNS records from GET /exportZones as CSV or XLSX.
+// Pass a `zone` to scope the export to one zone; omit it to export all zones.
+// Returns the file Blob plus the server-suggested filename.
+export async function exportZones({ format = 'csv', zone } = {}) {
+  const params = { format: format === 'xlsx' ? 'xlsx' : 'csv' }
+  const scopedZone = zone ? normalizeZoneName(zone) : ''
+  if (scopedZone) {
+    params.zone = scopedZone
+  }
+
+  try {
+    const response = await client.request({
+      method: 'GET',
+      url: '/exportZones',
+      params,
+      responseType: 'blob',
+    })
+
+    return {
+      blob: response.data,
+      filename:
+        parseContentDispositionFilename(response.headers?.['content-disposition'])
+        || defaultZonesExportName(params.format, scopedZone),
+    }
+  } catch (error) {
+    const apiError = new Error(await readBlobErrorMessage(error))
+    apiError.cause = error
+    throw apiError
+  }
+}
+
+// Infers the import format from a filename when not given explicitly.
+export function guessImportFormat(filename = '') {
+  return /\.xlsx$/i.test(filename) ? 'xlsx' : 'csv'
+}
+
+// Excel's "CSV UTF-8" export prepends a byte-order mark (EF BB BF). Go's
+// encoding/csv treats it as part of the first field, which trips
+// "bare quote in non-quoted field" on a quoted first column. Drop a leading
+// BOM at the byte level (leaving every other byte untouched) so the server
+// sees clean CSV. Binary formats never match the BOM signature.
+async function stripUtf8Bom(file) {
+  const head = new Uint8Array(await file.slice(0, 3).arrayBuffer())
+  if (head.length === 3 && head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf) {
+    return new File([file.slice(3)], file.name, { type: file.type || 'text/csv' })
+  }
+  return file
+}
+
+// Bulk-creates zones + records from an uploaded CSV/XLSX via POST /importZones.
+// Sends the file as multipart (field "file").
+//
+// IMPORTANT: the axios client sets a default `Content-Type: application/json`.
+// For a FormData body that default must be cleared, otherwise axios sends the
+// multipart bytes labelled `application/json` WITH NO boundary — the server
+// then can't find the file part, reads the raw body, and parses the multipart
+// envelope's boundary line as the CSV header ("missing required column zone").
+// Setting Content-Type to undefined makes the browser generate the correct
+// `multipart/form-data; boundary=…` header itself.
+// Resolves to the server's JSON ImportReport.
+export async function importZones({ file, format } = {}) {
+  if (!file) {
+    throw new Error('Choose a CSV or XLSX file to import.')
+  }
+
+  const resolvedFormat = format || guessImportFormat(file.name)
+  const payload = resolvedFormat === 'csv' ? await stripUtf8Bom(file) : file
+
+  const formData = new FormData()
+  formData.append('file', payload)
+
+  return request({
+    method: 'POST',
+    url: '/importZones',
+    params: { format: resolvedFormat },
+    data: formData,
+    headers: { 'Content-Type': undefined },
+  })
 }
 
 export { API_BASE_URL, client as scleraApiClient }

@@ -13,6 +13,7 @@ import {
   CreateSmartIPRuleModal,
   AddZonesToRuleModal,
   DeleteConfirmationModal,
+  ImportExportModal,
 } from './components/Modals'
 import { ModalProvider } from './context/ModalContext'
 import { FeedbackProvider } from './context/FeedbackContext'
@@ -39,6 +40,7 @@ function AppContent() {
       <CreateSmartIPRuleModal />
       <AddZonesToRuleModal />
       <DeleteConfirmationModal />
+      <ImportExportModal />
     </>
   )
 }
