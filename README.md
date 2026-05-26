@@ -31,7 +31,7 @@ VITE_SCLERA_API_BASE_URL=http://localhost:8082 npm run dev
 
 | Route | Component | Purpose |
 |---|---|---|
-| `/` | `HostedZonesList` | List, create, and bulk-delete zones |
+| `/` | `HostedZonesList` | List, create, and bulk-delete zones; Import / Export dialog (records CSV/Excel, full DB snapshot, bulk import) |
 | `/zones/:zoneId` | `ZoneRecords` | View, create, edit, and delete RRsets in one zone; DNSSEC panel |
 | `/rules` | `SmartRulesList` | Manage Smart IP regex rules and zone associations |
 | `/docs` | `ApiDocs` | Live HTTP API reference — searchable, formatted request/response payloads, copy buttons, per-endpoint cURL |
@@ -45,11 +45,12 @@ src/
   components/
     Common/                Button, Modal, Table, TextField/TextArea, Select, Alert, Badge, CopyButton, CodeBlock…
     Layout/                MainLayout, TopBar, Sidebar
-    Modals/                EditRecord, EditSoa, RecordDetails, CreateZone, DeleteConfirmation, Smart IP modals
+    Modals/                EditRecord, EditSoa, RecordDetails, CreateZone, DeleteConfirmation, ImportExport, Smart IP modals
     Zone/                  DnssecSection (collapsible DNSSEC panel for the zone detail page)
   context/                 Modal, Feedback, Theme providers
   hooks/                   useModal, useFeedback, useTheme
   pages/                   HostedZonesList, ZoneRecords, SmartRulesList, ApiDocs, DnsReference
+  utils/download.js        Blob-to-disk download helper (DB snapshot + record exports)
   styles/globals.css       Tailwind + design-system tokens
 ```
 
@@ -71,6 +72,9 @@ ScleraDNS is an HTTP/JSON control plane (not a DNS-protocol server itself — se
 | PUT | `/updateSOA` | Update zone SOA with structured fields (RFC 1912 §2.2 / RFC 2308 validation; serial is auto-incremented by the backend, never sent from the UI) |
 | POST | `/deleteRecord` | Remove one value (RRset auto-deleted when last value goes) |
 | POST | `/deleteAllRecords` | Delete a whole RRset |
+| GET | `/exportDB` | Stream a full binary SQLite snapshot (records + Smart IP rules + DNSSEC keys) for replication / disaster recovery |
+| GET | `/exportZones` | Download records as CSV or Excel (`format=csv\|xlsx`); `zone=` for one zone, omit for all. Records only — no keys/rules |
+| POST | `/importZones` | Bulk-create zones + records from an uploaded CSV/XLSX (multipart `file`); additive; returns a JSON ImportReport |
 | POST | `/addSmartIPRule` | Create or update a Smart IP regex rule |
 | POST | `/addZoneToSmartIPRule` | Attach a zone to a rule |
 | POST | `/removeZoneFromSmartIPRule` | Detach a zone from a rule |
@@ -156,6 +160,7 @@ The frontend talks to ScleraDNS over JSON/HTTP. Whether a true authoritative DNS
 - **Per-row record actions** — each RRset row in the Zone Records table shows Edit + Delete. Locked icons replace the action when it isn't permitted, with explanatory tooltips: apex NS rows allow edit but lock delete (zone must keep nameservers); SOA rows allow edit (opens a structured modal) but lock delete; everything in an internal-zone is fully locked.
 - **DNSSEC panel** — the zone detail page has a collapsible DNSSEC section that reads `/getZoneDNSSEC` on load, surfaces DS records (sorted SHA-256 → SHA-384 → SHA-1) with copy buttons, hides raw DNSKEYs behind a "Technical details" disclosure, and gates enable/disable behind confirmation modals. DNSSEC can also be toggled on at zone-creation time.
 - **Record type coverage** — A, AAAA, CNAME, ALIAS, MX, NS, PTR, TXT are creatable from the UI. SOA is editable via a dedicated structured form (MNAME / RNAME / REFRESH / RETRY / EXPIRE / MINIMUM / TTL — full field breakdown documented on the Reference page). Serial is auto-incremented by the backend and never exposed in the UI. SOA records are never deletable.
+- **Import / Export dialog** — a single "Import / Export" button on the Hosted Zones page opens a two-pane modal: export (records as CSV/Excel via `/exportZones`, or a full restorable database snapshot via `/exportDB`) on the left, bulk import (`/importZones`) on the right. Downloads honor the server's `Content-Disposition` filename and fall back to a `scleraDNS-…` name. CSV uploads have a leading UTF-8 BOM stripped client-side before sending, because Go's `encoding/csv` rejects a quoted first column preceded by a BOM ("bare quote in non-quoted field"). A successful import toasts, refreshes the zone list, and closes the dialog.
 - **Email-authentication reference** — `/reference` documents SPF, DKIM, DMARC, BIMI, MTA-STS, and TLSRPT as conventional TXT-record patterns (owner name, format, example, governing RFC).
 - **Searchable docs** — both `/docs` and `/reference` have a top-of-page search that filters the visible sections live (by endpoint path/summary on `/docs`; by type/term/RFC on `/reference`). The sidebar quick-index follows the filter.
 - **Single source of truth for RFC docs** — the `/reference` page renders directly from the `RFC_COMPLIANCE` data structure, so adding or removing an enforced rule means editing one place.
