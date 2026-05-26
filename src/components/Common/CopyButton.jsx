@@ -1,16 +1,42 @@
 import { useState } from 'react'
 
+// The async Clipboard API only exists in secure contexts (HTTPS or localhost).
+// Over plain HTTP on a LAN IP/host it's undefined, so fall back to a hidden
+// textarea + execCommand('copy'), which works everywhere.
+async function copyToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // fall through to the legacy path
+    }
+  }
+
+  try {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.top = '-9999px'
+    document.body.appendChild(textarea)
+    textarea.select()
+    const ok = document.execCommand('copy')
+    textarea.remove()
+    return ok
+  } catch {
+    return false
+  }
+}
+
 export function CopyButton({ text, label = 'Copy', className = '' }) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // clipboard unavailable — silently no-op
-    }
+    const ok = await copyToClipboard(text)
+    if (!ok) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   return (

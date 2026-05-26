@@ -115,8 +115,10 @@ export function ImportExportModal() {
         <section className="space-y-4 md:pr-6">
           <PaneHeading icon="download" title="Export" />
           <p className="text-xs leading-5 text-on-surface-variant">
-            Records export as a spreadsheet (no keys or rules). The full database is a
-            restorable binary snapshot — use it for replication and disaster recovery.
+            Records export as a spreadsheet — <span className="font-semibold text-on-surface">DNSSEC
+            keys and Smart IP rules are not included</span>. To preserve keys (for replication or
+            disaster recovery), export the <span className="font-semibold text-on-surface">full
+            database</span> instead.
           </p>
           <div className="space-y-2">
             {EXPORT_ACTIONS.map((action) => (
@@ -192,6 +194,8 @@ export function ImportExportModal() {
           <p className="text-xs leading-5 text-on-surface-variant">
             Use a file in the same layout as a records export. Importing adds zones and
             records in bulk — it does not delete anything already present.
+            <span className="font-semibold text-on-surface"> DNSSEC keys are not imported</span>;
+            restore a full database export to bring keys back.
           </p>
 
           <Button

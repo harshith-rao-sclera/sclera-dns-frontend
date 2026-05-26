@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { MainLayout } from '../components/Layout/MainLayout'
 import { Badge, CodeBlock, CopyButton, TextField } from '../components/Common'
-import { API_BASE_URL } from '../api/scleraApi'
+
+// cURL examples in the docs are shown against a local backend so they're
+// copy-paste runnable during development, independent of the live API host.
+const DOCS_BASE_URL = 'http://localhost:8082'
 
 function buildCurl(endpoint) {
   if (endpoint.curl) return endpoint.curl
   if (endpoint.method === 'GET') {
     const qs = endpoint.sampleQuery ? `?${endpoint.sampleQuery}` : ''
-    return `curl "${API_BASE_URL}${endpoint.path}${qs}"`
+    return `curl "${DOCS_BASE_URL}${endpoint.path}${qs}"`
   }
-  const lines = [`curl -X ${endpoint.method} "${API_BASE_URL}${endpoint.path}"`]
+  const lines = [`curl -X ${endpoint.method} "${DOCS_BASE_URL}${endpoint.path}"`]
   if (endpoint.body) {
     const compact = endpoint.body.replace(/\s*\n\s*/g, ' ').trim()
     lines.push('  -H "Content-Type: application/json"')
@@ -193,7 +196,7 @@ const API_SECTIONS = [
         summary: 'Stream a full binary SQLite snapshot of the database (VACUUM INTO) — every table, including records, Smart IP rules, and DNSSEC keys. Intended for replication and disaster recovery. The response body is the database file itself, so it streams straight to disk regardless of size. Surfaced as "Full database (.sqlite)" in the Hosted Zones → Import / Export dialog.',
         params: 'None',
         body: null,
-        curl: `curl -OJ "${API_BASE_URL}/exportDB"`,
+        curl: `curl -OJ "${DOCS_BASE_URL}/exportDB"`,
         responses: [
           { status: 200, body: 'Binary SQLite stream. Headers: Content-Type: application/octet-stream; Content-Disposition: attachment; filename="scleraDNS-<UTC>.sqlite"; Accept-Ranges: bytes' },
           { status: 405, body: 'Method Not Allowed (GET only)' },
@@ -203,11 +206,11 @@ const API_SECTIONS = [
       {
         method: 'GET',
         path: '/exportZones',
-        summary: 'Download human-readable DNS records as CSV or Excel (records only — no DNSSEC keys or Smart IP rules). Pass zone=<name> to export a single zone, or omit it to export all zones. Surfaced as "Records — CSV / Excel" in the Import / Export dialog (per-zone export is requested with the zone parameter).',
+        summary: 'Download human-readable DNS records as CSV or Excel (records only — no DNSSEC keys or Smart IP rules; use GET /exportDB to capture those). Pass zone=<name> to export a single zone, or omit it to export all zones. Surfaced as "Records — CSV / Excel" in the Import / Export dialog (per-zone export is requested with the zone parameter).',
         params: 'Query: format (csv | xlsx, default csv), zone (optional — omit for all zones)',
         sampleQuery: 'format=csv',
         body: null,
-        curl: `curl -OJ "${API_BASE_URL}/exportZones?format=xlsx&zone=example.com"`,
+        curl: `curl -OJ "${DOCS_BASE_URL}/exportZones?format=xlsx&zone=example.com"`,
         responses: [
           { status: 200, body: 'CSV or XLSX file stream (Content-Disposition: attachment; filename suggested by the server).' },
           { status: 405, body: 'Method Not Allowed (GET only)' },
@@ -217,10 +220,10 @@ const API_SECTIONS = [
       {
         method: 'POST',
         path: '/importZones',
-        summary: 'Bulk-create zones and records from an uploaded CSV or XLSX file. Accepts a multipart file field named "file" (what the UI sends) or the raw request body. Importing is additive — it does not delete anything already present. Returns a JSON ImportReport. Note: the frontend strips a leading UTF-8 BOM from CSV uploads (Excel "CSV UTF-8" adds one) before sending, since Go\'s encoding/csv otherwise rejects a quoted first column with "bare quote in non-quoted field".',
+        summary: 'Bulk-create zones and records from an uploaded CSV or XLSX file. Accepts a multipart file field named "file" (what the UI sends) or the raw request body. Importing is additive — it does not delete anything already present. DNSSEC keys are not part of a CSV/XLSX import; restore them from a full GET /exportDB snapshot. Returns a JSON ImportReport. Note: the frontend strips a leading UTF-8 BOM from CSV uploads (Excel "CSV UTF-8" adds one) before sending, since Go\'s encoding/csv otherwise rejects a quoted first column with "bare quote in non-quoted field".',
         params: 'Query: format (csv | xlsx, default csv). Body: multipart field "file", or the raw file via --data-binary.',
         body: null,
-        curl: `curl -X POST "${API_BASE_URL}/importZones?format=csv" -F "file=@zones.csv"`,
+        curl: `curl -X POST "${DOCS_BASE_URL}/importZones?format=csv" -F "file=@zones.csv"`,
         responses: [
           { status: 200, body: 'JSON ImportReport (summary of created zones/records plus any per-row issues).' },
           { status: 400, body: 'Failed to parse upload: ...' },
